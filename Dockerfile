@@ -34,8 +34,8 @@ RUN npm install
 
 # 复制应用文件
 COPY package*.json ./
-COPY unified-server.js ./
-COPY dark-browser.js ./
+COPY unified-server.js dark-browser.js ./
+COPY auth/ ./auth/
 COPY camoufox-linux/ ./camoufox-linux/
 
 # 设置文件权限和camoufox可执行权限

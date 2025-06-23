@@ -1,32 +1,124 @@
-// unified-server.js (v3 - Unified Configuration with Priority)
+// unified-server.js (v15 - The Final Auth Cleanup Fix)
 
 // --- 核心依赖 ---
 const express = require('express');
 const WebSocket = require('ws');
 const http = require('http');
 const { EventEmitter } = require('events');
-const fs =require('fs');
+const fs = require('fs');
 const path = require('path');
 const { firefox } = require('playwright');
 const os = require('os');
+
+
+// ===================================================================================
+// AUTH SOURCE MANAGEMENT MODULE
+// ===================================================================================
+
+class AuthSource {
+  constructor(logger) {
+    this.logger = logger;
+    this.authMode = 'file'; // Default mode
+    this.maxIndex = 0;
+
+    if (process.env.AUTH_JSON_1) {
+      this.authMode = 'env';
+      this.logger.info('[Auth] 检测到 AUTH_JSON_1 环境变量，切换到环境变量认证模式。');
+    } else {
+      this.logger.info('[Auth] 未检测到环境变量认证，将使用 "auth/" 目录下的文件。');
+    }
+    
+    this._calculateMaxIndex();
+    
+    if (this.maxIndex === 0) {
+      this.logger.error(`[Auth] 致命错误：在 '${this.authMode}' 模式下未找到任何有效的认证源。`);
+      throw new Error("No valid authentication sources found.");
+    }
+  }
+
+  _calculateMaxIndex() {
+    if (this.authMode === 'env') {
+      let i = 1;
+      while (process.env[`AUTH_JSON_${i}`]) {
+        i++;
+      }
+      this.maxIndex = i - 1;
+    } else { // 'file' mode
+      const authDir = path.join(__dirname, 'auth');
+      if (!fs.existsSync(authDir)) {
+        this.logger.warn('[Auth] "auth/" 目录不存在。');
+        this.maxIndex = 0;
+        return;
+      }
+      try {
+        const files = fs.readdirSync(authDir);
+        const authFiles = files.filter(file => /^auth-\d+\.json$/.test(file));
+        const indices = authFiles.map(file => parseInt(file.match(/^auth-(\d+)\.json$/)[1], 10));
+        this.maxIndex = indices.length > 0 ? Math.max(...indices) : 0;
+      } catch (error) {
+        this.logger.error(`[Auth] 扫描 "auth/" 目录失败: ${error.message}`);
+        this.maxIndex = 0;
+      }
+    }
+    this.logger.info(`[Auth] 在 '${this.authMode}' 模式下，检测到 ${this.maxIndex} 个认证源。`);
+  }
+
+  getMaxIndex() {
+    return this.maxIndex;
+  }
+
+  getAuth(index) {
+    if (index > this.maxIndex || index < 1) {
+      this.logger.error(`[Auth] 请求了无效的认证索引: ${index}`);
+      return null;
+    }
+
+    let jsonString;
+    let sourceDescription;
+
+    if (this.authMode === 'env') {
+      jsonString = process.env[`AUTH_JSON_${index}`];
+      sourceDescription = `环境变量 AUTH_JSON_${index}`;
+    } else { // 'file' mode
+      const authFilePath = path.join(__dirname, 'auth', `auth-${index}.json`);
+      sourceDescription = `文件 ${authFilePath}`;
+      if (!fs.existsSync(authFilePath)) {
+          this.logger.error(`[Auth] ${sourceDescription} 不存在。`);
+          return null;
+      }
+      try {
+        jsonString = fs.readFileSync(authFilePath, 'utf-8');
+      } catch (e) {
+        this.logger.error(`[Auth] 读取 ${sourceDescription} 失败: ${e.message}`);
+        return null;
+      }
+    }
+    
+    try {
+      return JSON.parse(jsonString);
+    } catch (e) {
+      this.logger.error(`[Auth] 解析来自 ${sourceDescription} 的JSON内容失败: ${e.message}`);
+      return null;
+    }
+  }
+}
+
 
 // ===================================================================================
 // BROWSER MANAGEMENT MODULE
 // ===================================================================================
 
 class BrowserManager {
-  // --- MODIFICATION: Accepts the global config object ---
-  constructor(logger, config) {
+  constructor(logger, config, authSource) {
     this.logger = logger;
     this.config = config;
+    this.authSource = authSource;
     this.browser = null;
     this.context = null;
     this.page = null;
     this.currentAuthIndex = 0;
-    
     this.scriptFileName = 'dark-browser.js';
     
-    // --- MODIFICATION: Priority given to CAMOUFOX_EXECUTABLE_PATH env var ---
     if (this.config.browserExecutablePath) {
       this.browserExecutablePath = this.config.browserExecutablePath;
       this.logger.info(`[System] 使用环境变量 CAMOUFOX_EXECUTABLE_PATH 指定的浏览器路径。`);
@@ -51,12 +143,10 @@ class BrowserManager {
       return;
     }
     
-    const authFileName = `auth-${authIndex}.json`;
-    const authFilePath = path.join(__dirname, 'auth', authFileName);
-
+    const sourceDescription = this.authSource.authMode === 'env' ? `环境变量 AUTH_JSON_${authIndex}` : `文件 auth-${authIndex}.json`;
     this.logger.info('==================================================');
     this.logger.info(`🚀 [Browser] 准备启动浏览器`);
-    this.logger.info(`   • 认证文件: ${authFileName}`);
+    this.logger.info(`   • 认证源: ${sourceDescription}`);
     this.logger.info(`   • 浏览器路径: ${this.browserExecutablePath}`);
     this.logger.info('==================================================');
 
@@ -64,9 +154,11 @@ class BrowserManager {
         this.logger.error(`❌ [Browser] 找不到浏览器可执行文件: ${this.browserExecutablePath}`);
         throw new Error(`Browser executable not found at path: ${this.browserExecutablePath}`);
     }
-    if (!fs.existsSync(authFilePath)) {
-      this.logger.error(`❌ [Browser] 认证文件 "${authFileName}" 不存在！`);
-      throw new Error(`Authentication file not found: ${authFileName}`);
+    
+    const storageStateObject = this.authSource.getAuth(authIndex);
+    if (!storageStateObject) {
+        this.logger.error(`❌ [Browser] 无法获取或解析索引为 ${authIndex} 的认证信息。`);
+        throw new Error(`Failed to get or parse auth source for index ${authIndex}.`);
     }
 
     let buildScriptContent;
@@ -84,35 +176,33 @@ class BrowserManager {
         headless: true,
         executablePath: this.browserExecutablePath,
       });
-
       this.browser.on('disconnected', () => {
         this.logger.error('❌ [Browser] 浏览器意外断开连接！服务器可能需要重启。');
-        this.browser = null;
-        this.context = null;
-        this.page = null;
+        this.browser = null; this.context = null; this.page = null;
       });
-
       this.context = await this.browser.newContext({
-        storageState: authFilePath,
+        storageState: storageStateObject,
         viewport: { width: 1920, height: 1080 },
       });
-
       this.page = await this.context.newPage();
-      
       this.logger.info(`[Browser] 正在加载账户 ${authIndex} 并访问目标网页...`);
       const targetUrl = 'https://aistudio.google.com/u/0/apps/bundled/blank?showPreview=true&showCode=true&showAssistant=true';
       await this.page.goto(targetUrl, { timeout: 60000, waitUntil: 'networkidle' });
       this.logger.info('[Browser] 网页加载完成，正在注入客户端脚本...');
       
       const editorContainerLocator = this.page.locator('div.monaco-editor').first();
-      await editorContainerLocator.waitFor({ state: 'visible', timeout: 30000 });
-      await editorContainerLocator.click();
-
-      await this.page.evaluate(text => navigator.clipboard.writeText(text), buildScriptContent);
       
+      this.logger.info('[Browser] 等待编辑器出现，最长60秒...');
+      await editorContainerLocator.waitFor({ state: 'visible', timeout: 60000 });
+      this.logger.info('[Browser] 编辑器已出现，准备粘贴脚本。');
+
+      await editorContainerLocator.click();
+      await this.page.evaluate(text => navigator.clipboard.writeText(text), buildScriptContent);
       const isMac = os.platform() === 'darwin';
       const pasteKey = isMac ? 'Meta+V' : 'Control+V';
       await this.page.keyboard.press(pasteKey);
+      this.logger.info('[Browser] 脚本已粘贴。浏览器端初始化完成。');
+
 
       this.currentAuthIndex = authIndex;
       this.logger.info('==================================================');
@@ -133,9 +223,7 @@ class BrowserManager {
     if (this.browser) {
       this.logger.info('[Browser] 正在关闭当前浏览器实例...');
       await this.browser.close();
-      this.browser = null;
-      this.context = null;
-      this.page = null;
+      this.browser = null; this.context = null; this.page = null;
       this.logger.info('[Browser] 浏览器已关闭。');
     }
   }
@@ -147,7 +235,6 @@ class BrowserManager {
     this.logger.info(`✅ [Browser] 账号切换完成，当前账号: ${this.currentAuthIndex}`);
   }
 }
-
 
 // ===================================================================================
 // PROXY SERVER MODULE
@@ -286,18 +373,15 @@ class ConnectionRegistry extends EventEmitter {
 }
 
 class RequestHandler {
-  // --- MODIFICATION: Accepts the global config object ---
-  constructor(serverSystem, connectionRegistry, logger, browserManager, config) {
+  constructor(serverSystem, connectionRegistry, logger, browserManager, config, authSource) {
     this.serverSystem = serverSystem;
     this.connectionRegistry = connectionRegistry;
     this.logger = logger;
     this.browserManager = browserManager;
-    this.config = config; // Use the passed-in config
-
-    // Use values from the config object
+    this.config = config;
+    this.authSource = authSource;
     this.maxRetries = this.config.maxRetries;
     this.retryDelay = this.config.retryDelay;
-    
     this.failureCount = 0;
     this.isAuthSwitching = false;
   }
@@ -307,19 +391,12 @@ class RequestHandler {
   }
   
   _getMaxAuthIndex() {
-    try {
-      const files = fs.readdirSync(__dirname);
-      const authFiles = files.filter(file => /^auth-\d+\.json$/.test(file));
-      const indices = authFiles.map(file => parseInt(file.match(/^auth-(\d+)\.json$/)[1], 10));
-      return Math.max(...indices, 1);
-    } catch (error) {
-      this.logger.error('[Server] 获取auth文件数量失败:', error.message);
-      return 1;
-    }
+    return this.authSource.getMaxIndex();
   }
   
   _getNextAuthIndex() {
     const maxIndex = this._getMaxAuthIndex();
+    if (maxIndex === 0) return 0; // Should not happen if initial check passes
     return this.currentAuthIndex >= maxIndex ? 1 : this.currentAuthIndex + 1;
   }
   
@@ -336,8 +413,8 @@ class RequestHandler {
     this.logger.info('==================================================');
     this.logger.info(`🔄 [Auth] 开始账号切换流程`);
     this.logger.info(`   • 失败次数: ${this.failureCount}/${this.config.failureThreshold}`);
-    this.logger.info(`   • 当前账号: auth-${this.currentAuthIndex}.json`);
-    this.logger.info(`   • 目标账号: auth-${nextAuthIndex}.json`);
+    this.logger.info(`   • 当前账号索引: ${this.currentAuthIndex}`);
+    this.logger.info(`   • 目标账号索引: ${nextAuthIndex}`);
     this.logger.info(`   • 可用账号总数: ${maxAuthIndex}`);
     this.logger.info('==================================================');
     
@@ -345,12 +422,12 @@ class RequestHandler {
       await this.browserManager.switchAccount(nextAuthIndex);
       this.failureCount = 0;
       this.logger.info('==================================================');
-      this.logger.info(`✅ [Auth] 成功切换到auth-${this.currentAuthIndex}.json`);
+      this.logger.info(`✅ [Auth] 成功切换到账号索引 ${this.currentAuthIndex}`);
       this.logger.info(`✅ [Auth] 失败计数已重置为0`);
       this.logger.info('==================================================');
     } catch (error) {
       this.logger.error('==================================================');
-      this.logger.error(`❌ [Auth] 切换auth文件失败: ${error.message}`);
+      this.logger.error(`❌ [Auth] 切换账号失败: ${error.message}`);
       this.logger.error('==================================================');
       throw error;
     } finally {
@@ -432,13 +509,13 @@ class RequestHandler {
       }
       if (lastMessage.event_type === 'error' || requestFailed) {
         this.failureCount++;
-        this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号: auth-${this.currentAuthIndex}.json)`);
+        this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex})`);
         if (this.failureCount >= this.config.failureThreshold) {
           this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
           this._sendErrorChunkToClient(res, `连续失败${this.failureCount}次，正在尝试切换账号...`);
           try {
             await this._switchToNextAuth();
-            this._sendErrorChunkToClient(res, `已切换到账号 ${this.currentAuthIndex}，请重试`);
+            this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
           } catch (switchError) {
             this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
             this._sendErrorChunkToClient(res, `切换账号失败: ${switchError.message}`);
@@ -481,7 +558,7 @@ class RequestHandler {
     }
     if (headerMessage.event_type === 'error' || requestFailed) {
       this.failureCount++;
-      this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号: auth-${this.currentAuthIndex}.json)`);
+      this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex})`);
       if (this.failureCount >= this.config.failureThreshold) {
         this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
         try {
@@ -550,34 +627,25 @@ class ProxyServerSystem extends EventEmitter {
   constructor() {
     super();
     this.logger = new LoggingService('ProxySystem');
-    
-    // --- MODIFICATION: Centralized configuration management ---
     this._loadConfiguration();
-
     this.streamingMode = this.config.streamingMode;
     
-    this.browserManager = new BrowserManager(this.logger, this.config);
+    this.authSource = new AuthSource(this.logger);
+    this.browserManager = new BrowserManager(this.logger, this.config, this.authSource);
     this.connectionRegistry = new ConnectionRegistry(this.logger);
-    this.requestHandler = new RequestHandler(this, this.connectionRegistry, this.logger, this.browserManager, this.config);
+    this.requestHandler = new RequestHandler(this, this.connectionRegistry, this.logger, this.browserManager, this.config, this.authSource);
     
     this.httpServer = null;
     this.wsServer = null;
   }
   
   _loadConfiguration() {
-    // 1. Set hardcoded defaults
     let config = {
-      httpPort: 8889,
-      host: '0.0.0.0',
-      wsPort: 9998, // Internal, not exposed via env var
-      streamingMode: 'real',
-      failureThreshold: 3,
-      maxRetries: 3,
-      retryDelay: 2000,
-      browserExecutablePath: null,
+      httpPort: 8889, host: '0.0.0.0', wsPort: 9998, streamingMode: 'real',
+      failureThreshold: 3, maxRetries: 3, retryDelay: 2000, browserExecutablePath: null,
+      apiKeys: [],
     };
-
-    // 2. Override with config.json if it exists
+    
     const configPath = path.join(__dirname, 'config.json');
     try {
       if (fs.existsSync(configPath)) {
@@ -589,20 +657,18 @@ class ProxyServerSystem extends EventEmitter {
       this.logger.warn(`[System] 无法读取或解析 config.json: ${error.message}`);
     }
 
-    // 3. Override with environment variables (highest priority)
     if (process.env.PORT) config.httpPort = parseInt(process.env.PORT, 10) || config.httpPort;
     if (process.env.HOST) config.host = process.env.HOST;
-    if (process.env.STREAMING_MODE && ['real', 'fake'].includes(process.env.STREAMING_MODE)) {
-      config.streamingMode = process.env.STREAMING_MODE;
-    }
+    if (process.env.STREAMING_MODE) config.streamingMode = process.env.STREAMING_MODE;
     if (process.env.FAILURE_THRESHOLD) config.failureThreshold = parseInt(process.env.FAILURE_THRESHOLD, 10) || config.failureThreshold;
     if (process.env.MAX_RETRIES) config.maxRetries = parseInt(process.env.MAX_RETRIES, 10) || config.maxRetries;
     if (process.env.RETRY_DELAY) config.retryDelay = parseInt(process.env.RETRY_DELAY, 10) || config.retryDelay;
     if (process.env.CAMOUFOX_EXECUTABLE_PATH) config.browserExecutablePath = process.env.CAMOUFOX_EXECUTABLE_PATH;
+    if (process.env.API_KEYS) {
+        config.apiKeys = process.env.API_KEYS.split(',').map(k => k.trim()).filter(k => k);
+    }
     
     this.config = config;
-
-    // Log final effective configuration
     this.logger.info('================ [ EFFECTIVE CONFIGURATION ] ================');
     this.logger.info(`  HTTP Port: ${this.config.httpPort}`);
     this.logger.info(`  Host: ${this.config.host}`);
@@ -610,6 +676,11 @@ class ProxyServerSystem extends EventEmitter {
     this.logger.info(`  Failure Threshold: ${this.config.failureThreshold}`);
     this.logger.info(`  Max Retries: ${this.config.maxRetries}`);
     this.logger.info(`  Retry Delay: ${this.config.retryDelay}ms`);
+    if (this.config.apiKeys && this.config.apiKeys.length > 0) {
+        this.logger.info(`  API Key Auth: Enabled (${this.config.apiKeys.length} keys loaded)`);
+    } else {
+        this.logger.info(`  API Key Auth: Disabled`);
+    }
     this.logger.info('=============================================================');
   }
   
@@ -618,7 +689,6 @@ class ProxyServerSystem extends EventEmitter {
       await this.browserManager.launchBrowser(initialAuthIndex);
       await this._startHttpServer();
       await this._startWebSocketServer();
-      
       this.logger.info(`[System] 代理服务器系统启动完成。`);
       this.emit('started');
     } catch (error) {
@@ -626,6 +696,66 @@ class ProxyServerSystem extends EventEmitter {
       this.emit('error', error);
       throw error;
     }
+  }
+  
+  // --- The Final, Definitive Auth Middleware ---
+  _createAuthMiddleware() {
+    return (req, res, next) => {
+      const serverApiKeys = this.config.apiKeys;
+      if (!serverApiKeys || serverApiKeys.length === 0) {
+        return next();
+      }
+
+      let clientKey = null;
+      let keySource = null;
+      
+      const headers = req.headers;
+
+      // 1. Check standard headers first (most common and efficient)
+      // Node.js automatically lowercases all incoming header names.
+      if (headers['x-goog-api-key']) {
+        clientKey = headers['x-goog-api-key'];
+        keySource = 'x-goog-api-key Header';
+      } else if (headers.authorization && headers.authorization.startsWith('Bearer ')) {
+        clientKey = headers.authorization.substring(7);
+        keySource = 'Authorization Header';
+      } else if (headers['x-api-key']) {
+        clientKey = headers['x-api-key'];
+        keySource = 'X-API-Key Header';
+      }
+      
+      // 2. If no key in headers, check query parameter
+      if (!clientKey && req.query.key) {
+        clientKey = req.query.key;
+        keySource = 'Query Parameter';
+      }
+
+      // 3. Validate the found key
+      if (clientKey) {
+        if (serverApiKeys.includes(clientKey)) {
+          this.logger.info(`[Auth] API Key 在 '${keySource}' 中找到，验证通过。`);
+          
+          // --- CRITICAL FIX: Clean up the request object if key was in query ---
+          if (keySource === 'Query Parameter') {
+              delete req.query.key;
+              this.logger.debug(`[Auth-Cleanup] 已从 req.query 中移除 API Key，以确保请求纯净。`);
+          }
+          return next();
+        } else {
+          this.logger.warn(`[Auth] 拒绝请求: 无效的 API Key。IP: ${req.ip}, Source: ${keySource}, Key: '${clientKey}'`);
+          return res.status(401).json({ error: { message: "Invalid API key provided." } });
+        }
+      }
+
+      // If we reach here, no key was found in any standard location.
+      this.logger.warn(`[Auth] 拒绝受保护的请求: 缺少 API Key。IP: ${req.ip}, Path: ${req.path}`);
+      this.logger.debug(`[Auth-Debug] 未在任何标准位置找到API Key。`);
+      this.logger.debug(`[Auth-Debug] 搜索的Headers: ${JSON.stringify(headers)}`);
+      this.logger.debug(`[Auth-Debug] 搜索的Query: ${JSON.stringify(req.query)}`);
+      this.logger.debug(`[Auth-Debug] 已加载的API Keys: [${serverApiKeys.join(', ')}]`);
+
+      return res.status(401).json({ error: { message: "Access denied. A valid API key was not found in headers or query parameters." } });
+    };
   }
   
   async _startHttpServer() {
@@ -662,9 +792,12 @@ class ProxyServerSystem extends EventEmitter {
             streamingMode: this.streamingMode,
             failureThreshold: this.config.failureThreshold,
             maxRetries: this.config.maxRetries,
+            authMode: this.authSource.authMode,
+            apiKeyAuth: (this.config.apiKeys && this.config.apiKeys.length > 0) ? 'Enabled' : 'Disabled',
         },
         auth: {
           currentAuthIndex: this.requestHandler.currentAuthIndex,
+          maxAuthIndex: this.authSource.getMaxIndex(),
           failureCount: this.requestHandler.failureCount,
           isAuthSwitching: this.requestHandler.isAuthSwitching,
         },
@@ -677,8 +810,9 @@ class ProxyServerSystem extends EventEmitter {
       });
     });
     
-    app.all(/(.*)/, (req, res, next) => {
-      if (req.path.startsWith('/admin/')) return next();
+    app.use(this._createAuthMiddleware());
+    
+    app.all(/(.*)/, (req, res) => {
       if (req.path === '/favicon.ico') return res.status(204).send();
       this.requestHandler.processRequest(req, res);
     });
@@ -700,7 +834,6 @@ class ProxyServerSystem extends EventEmitter {
 
 async function initializeServer() {
   const initialAuthIndex = parseInt(process.env.INITIAL_AUTH_INDEX, 10) || 1;
-  
   try {
     const serverSystem = new ProxyServerSystem();
     await serverSystem.start(initialAuthIndex);

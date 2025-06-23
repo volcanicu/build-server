@@ -1,0 +1,9 @@
+{
+  "name": "aistudio-accounts-switch",
+  "version": "1.0.0",
+  "dependencies": {
+    "playwright": "^1.53.1",
+    "express": "^4.19.2",
+    "ws": "^8.17.0"
+  }
+}

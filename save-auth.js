@@ -1,5 +1,3 @@
-// 这是最终版 save-auth.js: 增加了登录状态验证，防止保存空文件
-
 const { firefox } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -62,7 +60,7 @@ function getNextAuthIndex() {
   // 3. 检查行数是否达到阈值
   if (lineCount > VALIDATION_LINE_THRESHOLD) {
     console.log(`✅ 状态验证通过 (${lineCount} 行 > ${VALIDATION_LINE_THRESHOLD} 行).`);
-    const authFilePath = path.join(__dirname, newAuthFileName);
+    const authFilePath = path.join(__dirname, 'auth', newAuthFileName);
     // 验证通过后，才将字符串写入文件
     fs.writeFileSync(authFilePath, stateString);
     console.log(`   认证信息已成功保存到: ${newAuthFileName}`);

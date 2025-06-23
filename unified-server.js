@@ -52,7 +52,7 @@ class BrowserManager {
     }
     
     const authFileName = `auth-${authIndex}.json`;
-    const authFilePath = path.join(__dirname, authFileName);
+    const authFilePath = path.join(__dirname, 'auth', authFileName);
 
     this.logger.info('==================================================');
     this.logger.info(`🚀 [Browser] 准备启动浏览器`);

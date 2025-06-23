@@ -1,4 +1,4 @@
-// unified-server.js (v15 - The Final Auth Cleanup Fix)
+// unified-server.js (v16 - API Key Sanitization Fix)
 
 // --- 核心依赖 ---
 const express = require('express');
@@ -665,7 +665,14 @@ class ProxyServerSystem extends EventEmitter {
     if (process.env.RETRY_DELAY) config.retryDelay = parseInt(process.env.RETRY_DELAY, 10) || config.retryDelay;
     if (process.env.CAMOUFOX_EXECUTABLE_PATH) config.browserExecutablePath = process.env.CAMOUFOX_EXECUTABLE_PATH;
     if (process.env.API_KEYS) {
-        config.apiKeys = process.env.API_KEYS.split(',').map(k => k.trim()).filter(k => k);
+        config.apiKeys = process.env.API_KEYS.split(',');
+    }
+
+    // --- CRITICAL FIX: Sanitize the apiKeys array to remove empty/whitespace-only keys ---
+    if (Array.isArray(config.apiKeys)) {
+        config.apiKeys = config.apiKeys.map(k => String(k).trim()).filter(k => k);
+    } else {
+        config.apiKeys = []; // Ensure it's always an array
     }
     
     this.config = config;
@@ -698,7 +705,6 @@ class ProxyServerSystem extends EventEmitter {
     }
   }
   
-  // --- The Final, Definitive Auth Middleware ---
   _createAuthMiddleware() {
     return (req, res, next) => {
       const serverApiKeys = this.config.apiKeys;
@@ -711,8 +717,6 @@ class ProxyServerSystem extends EventEmitter {
       
       const headers = req.headers;
 
-      // 1. Check standard headers first (most common and efficient)
-      // Node.js automatically lowercases all incoming header names.
       if (headers['x-goog-api-key']) {
         clientKey = headers['x-goog-api-key'];
         keySource = 'x-goog-api-key Header';
@@ -722,15 +726,11 @@ class ProxyServerSystem extends EventEmitter {
       } else if (headers['x-api-key']) {
         clientKey = headers['x-api-key'];
         keySource = 'X-API-Key Header';
-      }
-      
-      // 2. If no key in headers, check query parameter
-      if (!clientKey && req.query.key) {
+      } else if (req.query.key) {
         clientKey = req.query.key;
         keySource = 'Query Parameter';
       }
-
-      // 3. Validate the found key
+      
       if (clientKey) {
         if (serverApiKeys.includes(clientKey)) {
           this.logger.info(`[Auth] API Key 在 '${keySource}' 中找到，验证通过。`);
@@ -747,7 +747,6 @@ class ProxyServerSystem extends EventEmitter {
         }
       }
 
-      // If we reach here, no key was found in any standard location.
       this.logger.warn(`[Auth] 拒绝受保护的请求: 缺少 API Key。IP: ${req.ip}, Path: ${req.path}`);
       this.logger.debug(`[Auth-Debug] 未在任何标准位置找到API Key。`);
       this.logger.debug(`[Auth-Debug] 搜索的Headers: ${JSON.stringify(headers)}`);

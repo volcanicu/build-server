@@ -1,5 +1,3 @@
-// 这是最终版 save-auth.js: 修正了索引检测路径，并为每个账户生成两种格式的认证文件
-
 const { firefox } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -26,15 +24,12 @@ function ensureDirectoryExists(dirPath) {
  * @returns {number} - 下一个可用的索引值。
  */
 function getNextAuthIndex() {
-  // <<< 这是关键的修正点：指定要扫描的目录是 'auth' 文件夹
   const directory = path.join(__dirname, AUTH_DIR);
   
-  // 如果 'auth' 目录还不存在，说明是第一次运行，直接返回索引 1
   if (!fs.existsSync(directory)) {
     return 1;
   }
 
-  // 从正确的目录中读取文件列表
   const files = fs.readdirSync(directory);
   const authRegex = /^auth-(\d+)\.json$/;
 
@@ -52,14 +47,12 @@ function getNextAuthIndex() {
 }
 
 (async () => {
-  // 1. 脚本启动时，首先确保目标文件夹存在
   const authDirPath = path.join(__dirname, AUTH_DIR);
   const singleLineAuthDirPath = path.join(__dirname, SINGLE_LINE_AUTH_DIR);
   ensureDirectoryExists(authDirPath);
   ensureDirectoryExists(singleLineAuthDirPath);
 
-  // 2. 获取新的文件索引和文件名
-  const newIndex = getNextAuthIndex(); // 现在这个函数可以正常工作了
+  const newIndex = getNextAuthIndex();
   const newAuthFileName = `auth-${newIndex}.json`;
   const newSingleLineAuthFileName = `auth-single-${newIndex}.json`;
 
@@ -75,11 +68,12 @@ function getNextAuthIndex() {
   const page = await context.newPage();
 
   console.log('\n--- 请在新打开的 Camoufox 窗口中完成以下操作 ---');
-  console.log('1. 在网页上【完全登录】您的Google账户。');
-  console.log('2. 登录成功后，请不要关闭浏览器窗口。');
+  console.log('1. 浏览器将打开 Google AI Studio，请在弹出的页面中【完全登录】您的Google账户。');
+  console.log('2. 登录成功并看到 AI Studio 界面后，请不要关闭浏览器窗口。');
   console.log('3. 回到这个终端，然后按 "Enter" 键继续...');
 
-  await page.goto('https://accounts.google.com/');
+  // <<< 这是唯一的修改点：已更新为 Google AI Studio 地址 >>>
+  await page.goto('https://aistudio.google.com/u/0/prompts/new_chat');
 
   await new Promise(resolve => process.stdin.once('data', resolve));
 

@@ -1,3 +1,5 @@
+// 这是最终版 save-auth.js: 修正了索引检测路径，并为每个账户生成两种格式的认证文件
+
 const { firefox } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -24,12 +26,15 @@ function ensureDirectoryExists(dirPath) {
  * @returns {number} - 下一个可用的索引值。
  */
 function getNextAuthIndex() {
+  // <<< 这是关键的修正点：指定要扫描的目录是 'auth' 文件夹
   const directory = path.join(__dirname, AUTH_DIR);
+  
   // 如果 'auth' 目录还不存在，说明是第一次运行，直接返回索引 1
   if (!fs.existsSync(directory)) {
     return 1;
   }
 
+  // 从正确的目录中读取文件列表
   const files = fs.readdirSync(directory);
   const authRegex = /^auth-(\d+)\.json$/;
 
@@ -54,7 +59,7 @@ function getNextAuthIndex() {
   ensureDirectoryExists(singleLineAuthDirPath);
 
   // 2. 获取新的文件索引和文件名
-  const newIndex = getNextAuthIndex();
+  const newIndex = getNextAuthIndex(); // 现在这个函数可以正常工作了
   const newAuthFileName = `auth-${newIndex}.json`;
   const newSingleLineAuthFileName = `auth-single-${newIndex}.json`;
 
@@ -81,31 +86,22 @@ function getNextAuthIndex() {
   // ==================== 智能验证与双文件保存逻辑 ====================
   console.log('\n正在获取并验证登录状态...');
   
-  // 1. 获取状态到内存中
   const currentState = await context.storageState();
-
-  // 2. 将状态对象格式化为带缩进的JSON字符串，用于验证和保存为可读文件
   const prettyStateString = JSON.stringify(currentState, null, 2);
   const lineCount = prettyStateString.split('\n').length;
 
-  // 3. 检查行数是否达到阈值
   if (lineCount > VALIDATION_LINE_THRESHOLD) {
     console.log(`✅ 状态验证通过 (${lineCount} 行 > ${VALIDATION_LINE_THRESHOLD} 行).`);
     
-    // 生成单行JSON字符串
     const singleLineStateString = JSON.stringify(currentState);
-
-    // 定义两个文件的完整路径
     const prettyAuthFilePath = path.join(authDirPath, newAuthFileName);
     const singleLineAuthFilePath = path.join(singleLineAuthDirPath, newSingleLineAuthFileName);
     
-    // 写入格式化的文件
     fs.writeFileSync(prettyAuthFilePath, prettyStateString);
     console.log(`   📄 格式化文件已保存到: ${path.join(AUTH_DIR, newAuthFileName)}`);
     
-    // 写入单行文件
     fs.writeFileSync(singleLineAuthFilePath, singleLineStateString);
-    console.log(`    单行压缩文件已保存到: ${path.join(SINGLE_LINE_AUTH_DIR, newSingleLineAuthFileName)}`);
+    console.log(`    compressed -> 压缩文件已保存到: ${path.join(SINGLE_LINE_AUTH_DIR, newSingleLineAuthFileName)}`);
 
   } else {
     console.log(`❌ 状态验证失败 (${lineCount} 行 <= ${VALIDATION_LINE_THRESHOLD} 行).`);

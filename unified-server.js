@@ -1,6 +1,3 @@
-// unified-server.js (v16 - API Key Sanitization Fix)
-
-// --- 核心依赖 ---
 const express = require('express');
 const WebSocket = require('ws');
 const http = require('http');
@@ -412,7 +409,7 @@ class RequestHandler {
     
     this.logger.info('==================================================');
     this.logger.info(`🔄 [Auth] 开始账号切换流程`);
-    this.logger.info(`   • 失败次数: ${this.failureCount}/${this.config.failureThreshold}`);
+    this.logger.info(`   • 失败次数: ${this.failureCount}/${this.config.failureThreshold > 0 ? this.config.failureThreshold : 'N/A'}`);
     this.logger.info(`   • 当前账号索引: ${this.currentAuthIndex}`);
     this.logger.info(`   • 目标账号索引: ${nextAuthIndex}`);
     this.logger.info(`   • 可用账号总数: ${maxAuthIndex}`);
@@ -434,6 +431,42 @@ class RequestHandler {
       this.isAuthSwitching = false;
     }
   }
+  
+  async _handleRequestFailureAndSwitch(errorDetails, res) {
+    const isImmediateSwitch = this.config.immediateSwitchStatusCodes.includes(errorDetails.status);
+    
+    if (isImmediateSwitch) {
+      this.logger.warn(`🔴 [Auth] 收到状态码 ${errorDetails.status}，触发立即切换账号...`);
+      if (res) this._sendErrorChunkToClient(res, `收到状态码 ${errorDetails.status}，正在尝试切换账号...`);
+      try {
+        await this._switchToNextAuth();
+        if (res) this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
+      } catch (switchError) {
+        this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
+        if (res) this._sendErrorChunkToClient(res, `切换账号失败: ${switchError.message}`);
+      }
+      return; // End here after immediate switch attempt
+    }
+
+    if (this.config.failureThreshold > 0) {
+      this.failureCount++;
+      this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex})`);
+      if (this.failureCount >= this.config.failureThreshold) {
+        this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
+        if (res) this._sendErrorChunkToClient(res, `连续失败${this.failureCount}次，正在尝试切换账号...`);
+        try {
+          await this._switchToNextAuth();
+          if (res) this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
+        } catch (switchError) {
+          this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
+          if (res) this._sendErrorChunkToClient(res, `切换账号失败: ${switchError.message}`);
+        }
+      }
+    } else {
+        this.logger.warn(`[Auth] 请求失败 (状态码: ${errorDetails.status})。基于计数的自动切换已禁用 (failureThreshold=0)`);
+    }
+  }
+
 
   async processRequest(req, res) {
     this.logger.info(`[Request] 处理请求: ${req.method} ${req.path}`);
@@ -497,6 +530,7 @@ class RequestHandler {
         this._forwardRequest(proxyRequest);
         lastMessage = await messageQueue.dequeue();
         if (lastMessage.event_type === 'error' && lastMessage.status >= 400 && lastMessage.status <= 599) {
+          await this._handleRequestFailureAndSwitch(lastMessage, res);
           const errorText = `收到 ${lastMessage.status} 错误。${attempt < this.maxRetries ? `将在 ${this.retryDelay / 1000}秒后重试...` : '已达到最大重试次数。'}`;
           this._sendErrorChunkToClient(res, errorText);
           if (attempt < this.maxRetries) {
@@ -508,19 +542,6 @@ class RequestHandler {
         break;
       }
       if (lastMessage.event_type === 'error' || requestFailed) {
-        this.failureCount++;
-        this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex})`);
-        if (this.failureCount >= this.config.failureThreshold) {
-          this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
-          this._sendErrorChunkToClient(res, `连续失败${this.failureCount}次，正在尝试切换账号...`);
-          try {
-            await this._switchToNextAuth();
-            this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
-          } catch (switchError) {
-            this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
-            this._sendErrorChunkToClient(res, `切换账号失败: ${switchError.message}`);
-          }
-        }
         throw new Error(lastMessage.message || '请求失败');
       }
       if (this.failureCount > 0) {
@@ -547,6 +568,7 @@ class RequestHandler {
       this._forwardRequest(proxyRequest);
       headerMessage = await messageQueue.dequeue();
       if (headerMessage.event_type === 'error' && headerMessage.status >= 400 && headerMessage.status <= 599) {
+        await this._handleRequestFailureAndSwitch(headerMessage, null); // `res` is not available for streaming chunks here
         this.logger.warn(`[Request] 收到 ${headerMessage.status} 错误，将在 ${this.retryDelay / 1000}秒后重试...`);
         if (attempt < this.maxRetries) {
           await new Promise(resolve => setTimeout(resolve, this.retryDelay));
@@ -557,16 +579,6 @@ class RequestHandler {
       break;
     }
     if (headerMessage.event_type === 'error' || requestFailed) {
-      this.failureCount++;
-      this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex})`);
-      if (this.failureCount >= this.config.failureThreshold) {
-        this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
-        try {
-          await this._switchToNextAuth();
-        } catch (switchError) {
-          this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
-        }
-      }
       return this._sendErrorResponse(res, headerMessage.status, headerMessage.message);
     }
     if (this.failureCount > 0) {
@@ -642,8 +654,10 @@ class ProxyServerSystem extends EventEmitter {
   _loadConfiguration() {
     let config = {
       httpPort: 8889, host: '0.0.0.0', wsPort: 9998, streamingMode: 'real',
-      failureThreshold: 3, maxRetries: 3, retryDelay: 2000, browserExecutablePath: null,
+      failureThreshold: 0, 
+      maxRetries: 3, retryDelay: 2000, browserExecutablePath: null,
       apiKeys: [],
+      immediateSwitchStatusCodes: [],
     };
     
     const configPath = path.join(__dirname, 'config.json');
@@ -667,26 +681,48 @@ class ProxyServerSystem extends EventEmitter {
     if (process.env.API_KEYS) {
         config.apiKeys = process.env.API_KEYS.split(',');
     }
+    
+    // NEW: 统一处理 immediateSwitchStatusCodes，环境变量优先于 config.json
+    let rawCodes = process.env.IMMEDIATE_SWITCH_STATUS_CODES;
+    let codesSource = '环境变量';
 
-    // --- CRITICAL FIX: Sanitize the apiKeys array to remove empty/whitespace-only keys ---
+    if (!rawCodes && config.immediateSwitchStatusCodes && Array.isArray(config.immediateSwitchStatusCodes)) {
+      rawCodes = config.immediateSwitchStatusCodes.join(',');
+      codesSource = 'config.json 文件';
+    }
+
+    if (rawCodes && typeof rawCodes === 'string') {
+      config.immediateSwitchStatusCodes = rawCodes
+        .split(',')
+        .map(code => parseInt(String(code).trim(), 10))
+        .filter(code => !isNaN(code) && code >= 400 && code <= 599);
+      if (config.immediateSwitchStatusCodes.length > 0) {
+        this.logger.info(`[System] 已从 ${codesSource} 加载“立即切换状态码”。`);
+      }
+    } else {
+      config.immediateSwitchStatusCodes = [];
+    }
+
     if (Array.isArray(config.apiKeys)) {
         config.apiKeys = config.apiKeys.map(k => String(k).trim()).filter(k => k);
     } else {
-        config.apiKeys = []; // Ensure it's always an array
+        config.apiKeys = [];
     }
     
     this.config = config;
-    this.logger.info('================ [ EFFECTIVE CONFIGURATION ] ================');
-    this.logger.info(`  HTTP Port: ${this.config.httpPort}`);
-    this.logger.info(`  Host: ${this.config.host}`);
-    this.logger.info(`  Streaming Mode: ${this.config.streamingMode}`);
-    this.logger.info(`  Failure Threshold: ${this.config.failureThreshold}`);
-    this.logger.info(`  Max Retries: ${this.config.maxRetries}`);
-    this.logger.info(`  Retry Delay: ${this.config.retryDelay}ms`);
+    this.logger.info('================ [ 生效配置 ] ================');
+    this.logger.info(`  HTTP 服务端口: ${this.config.httpPort}`);
+    this.logger.info(`  监听地址: ${this.config.host}`);
+    this.logger.info(`  流式模式: ${this.config.streamingMode}`);
+    // MODIFIED: 日志输出已汉化
+    this.logger.info(`  失败计数切换: ${this.config.failureThreshold > 0 ? `连续 ${this.config.failureThreshold} 次失败后切换` : '已禁用'}`);
+    this.logger.info(`  立即切换状态码: ${this.config.immediateSwitchStatusCodes.length > 0 ? this.config.immediateSwitchStatusCodes.join(', ') : '已禁用'}`);
+    this.logger.info(`  单次请求最大重试: ${this.config.maxRetries}次`);
+    this.logger.info(`  重试间隔: ${this.config.retryDelay}ms`);
     if (this.config.apiKeys && this.config.apiKeys.length > 0) {
-        this.logger.info(`  API Key Auth: Enabled (${this.config.apiKeys.length} keys loaded)`);
+        this.logger.info(`  API 密钥认证: 已启用 (${this.config.apiKeys.length} 个密钥)`);
     } else {
-        this.logger.info(`  API Key Auth: Disabled`);
+        this.logger.info(`  API 密钥认证: 已禁用`);
     }
     this.logger.info('=============================================================');
   }
@@ -735,7 +771,6 @@ class ProxyServerSystem extends EventEmitter {
         if (serverApiKeys.includes(clientKey)) {
           this.logger.info(`[Auth] API Key 在 '${keySource}' 中找到，验证通过。`);
           
-          // --- CRITICAL FIX: Clean up the request object if key was in query ---
           if (keySource === 'Query Parameter') {
               delete req.query.key;
               this.logger.debug(`[Auth-Cleanup] 已从 req.query 中移除 API Key，以确保请求纯净。`);
@@ -790,6 +825,7 @@ class ProxyServerSystem extends EventEmitter {
         config: {
             streamingMode: this.streamingMode,
             failureThreshold: this.config.failureThreshold,
+            immediateSwitchStatusCodes: this.config.immediateSwitchStatusCodes,
             maxRetries: this.config.maxRetries,
             authMode: this.authSource.authMode,
             apiKeyAuth: (this.config.apiKeys && this.config.apiKeys.length > 0) ? 'Enabled' : 'Disabled',

@@ -219,13 +219,13 @@ class BrowserManager {
       this.page = await this.context.newPage();
       this.logger.info(`[Browser] 正在加载账户 ${authIndex} 并访问目标网页...`);
       const targetUrl = 'https://aistudio.google.com/u/0/apps/bundled/blank?showPreview=true&showCode=true&showAssistant=true';
-      await this.page.goto(targetUrl, { timeout: 60000, waitUntil: 'networkidle' });
+      await this.page.goto(targetUrl, { timeout: 120000, waitUntil: 'networkidle' });
       this.logger.info('[Browser] 网页加载完成，正在注入客户端脚本...');
 
       const editorContainerLocator = this.page.locator('div.monaco-editor').first();
 
-      this.logger.info('[Browser] 等待编辑器出现，最长60秒...');
-      await editorContainerLocator.waitFor({ state: 'visible', timeout: 60000 });
+      this.logger.info('[Browser] 等待编辑器出现，最长120秒...');
+      await editorContainerLocator.waitFor({ state: 'visible', timeout: 120000 });
       this.logger.info('[Browser] 编辑器已出现，准备粘贴脚本。');
 
       // --- START: 新增的点击逻辑 ---
@@ -243,7 +243,7 @@ class BrowserManager {
       }
       // --- END: 新增的点击逻辑 ---
 
-      await editorContainerLocator.click({ timeout: 60000 });
+      await editorContainerLocator.click({ timeout: 120000 });
       await this.page.evaluate(text => navigator.clipboard.writeText(text), buildScriptContent);
       const isMac = os.platform() === 'darwin';
       const pasteKey = isMac ? 'Meta+V' : 'Control+V';
@@ -302,7 +302,7 @@ class LoggingService {
 }
 
 class MessageQueue extends EventEmitter {
-  constructor(timeoutMs = 600000) {
+  constructor(timeoutMs = 1200000) {
     super();
     this.messages = [];
     this.waitingResolvers = [];
@@ -469,7 +469,8 @@ class RequestHandler {
     if (nextAuthIndex === null) {
         this.logger.error('🔴 [Auth] 无法切换账号，因为没有可用的认证源！');
         this.isAuthSwitching = false;
-        return;
+        // 抛出错误以便调用者可以捕获它
+        throw new Error('No available authentication sources to switch to.');
     }
 
     this.logger.info('==================================================');
@@ -497,12 +498,45 @@ class RequestHandler {
     }
   }
 
+  // NEW: Error parsing and correction utility
+  _parseAndCorrectErrorDetails(errorDetails) {
+    // 创建一个副本以避免修改原始对象
+    const correctedDetails = { ...errorDetails };
+    this.logger.debug(`[ErrorParser] 原始错误详情: status=${correctedDetails.status}, message="${correctedDetails.message}"`);
+
+    // 只有在错误消息存在时才尝试解析
+    if (correctedDetails.message && typeof correctedDetails.message === 'string') {
+      // 正则表达式匹配 "HTTP xxx" 或 "status code xxx" 等模式
+      const regex = /(?:HTTP|status code)\s+(\d{3})/;
+      const match = correctedDetails.message.match(regex);
+
+      if (match && match[1]) {
+        const parsedStatus = parseInt(match[1], 10);
+        // 确保解析出的状态码是有效的 HTTP 错误码
+        if (parsedStatus >= 400 && parsedStatus <= 599) {
+          if (correctedDetails.status !== parsedStatus) {
+            this.logger.warn(`[ErrorParser] 修正了错误状态码！原始: ${correctedDetails.status}, 从消息中解析得到: ${parsedStatus}`);
+            correctedDetails.status = parsedStatus; // 使用解析出的更准确的状态码
+          } else {
+            this.logger.debug(`[ErrorParser] 解析的状态码 (${parsedStatus}) 与原始状态码一致，无需修正。`);
+          }
+        }
+      }
+    }
+    return correctedDetails;
+  }
+
   async _handleRequestFailureAndSwitch(errorDetails, res) {
-    const isImmediateSwitch = this.config.immediateSwitchStatusCodes.includes(errorDetails.status);
+    // --- START: MODIFICATION ---
+    const correctedErrorDetails = this._parseAndCorrectErrorDetails(errorDetails);
+    // --- END: MODIFICATION ---
+
+    // 使用修正后的错误详情进行判断
+    const isImmediateSwitch = this.config.immediateSwitchStatusCodes.includes(correctedErrorDetails.status);
 
     if (isImmediateSwitch) {
-      this.logger.warn(`🔴 [Auth] 收到状态码 ${errorDetails.status}，触发立即切换账号...`);
-      if (res) this._sendErrorChunkToClient(res, `收到状态码 ${errorDetails.status}，正在尝试切换账号...`);
+      this.logger.warn(`🔴 [Auth] 收到状态码 ${correctedErrorDetails.status} (已修正)，触发立即切换账号...`);
+      if (res) this._sendErrorChunkToClient(res, `收到状态码 ${correctedErrorDetails.status}，正在尝试切换账号...`);
       try {
         await this._switchToNextAuth();
         if (res) this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
@@ -512,23 +546,24 @@ class RequestHandler {
       }
       return; // End here after immediate switch attempt
     }
-
+    
+    // 使用 correctedErrorDetails.status
     if (this.config.failureThreshold > 0) {
-      this.failureCount++;
-      this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex})`);
-      if (this.failureCount >= this.config.failureThreshold) {
-        this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
-        if (res) this._sendErrorChunkToClient(res, `连续失败${this.failureCount}次，正在尝试切换账号...`);
-        try {
-          await this._switchToNextAuth();
-          if (res) this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
-        } catch (switchError) {
-          this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
-          if (res) this._sendErrorChunkToClient(res, `切换账号失败: ${switchError.message}`);
+        this.failureCount++;
+        this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex}, 状态码: ${correctedErrorDetails.status})`);
+        if (this.failureCount >= this.config.failureThreshold) {
+            this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
+            if (res) this._sendErrorChunkToClient(res, `连续失败${this.failureCount}次，正在尝试切换账号...`);
+            try {
+                await this._switchToNextAuth();
+                if (res) this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
+            } catch (switchError) {
+                this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
+                if (res) this._sendErrorChunkToClient(res, `切换账号失败: ${switchError.message}`);
+            }
         }
-      }
     } else {
-      this.logger.warn(`[Auth] 请求失败 (状态码: ${errorDetails.status})。基于计数的自动切换已禁用 (failureThreshold=0)`);
+        this.logger.warn(`[Auth] 请求失败 (状态码: ${correctedErrorDetails.status})。基于计数的自动切换已禁用 (failureThreshold=0)`);
     }
   }
 
@@ -595,8 +630,13 @@ class RequestHandler {
         this._forwardRequest(proxyRequest);
         lastMessage = await messageQueue.dequeue();
         if (lastMessage.event_type === 'error' && lastMessage.status >= 400 && lastMessage.status <= 599) {
-          await this._handleRequestFailureAndSwitch(lastMessage, res);
-          const errorText = `收到 ${lastMessage.status} 错误。${attempt < this.maxRetries ? `将在 ${this.retryDelay / 1000}秒后重试...` : '已达到最大重试次数。'}`;
+          
+          // --- START: MODIFICATION ---
+          const correctedMessage = this._parseAndCorrectErrorDetails(lastMessage);
+          await this._handleRequestFailureAndSwitch(correctedMessage, res);
+          const errorText = `收到 ${correctedMessage.status} 错误。${attempt < this.maxRetries ? `将在 ${this.retryDelay / 1000}秒后重试...` : '已达到最大重试次数。'}`;
+          // --- END: MODIFICATION ---
+
           this._sendErrorChunkToClient(res, errorText);
           if (attempt < this.maxRetries) {
             await new Promise(resolve => setTimeout(resolve, this.retryDelay));
@@ -606,9 +646,14 @@ class RequestHandler {
         }
         break;
       }
+      // --- START: MODIFICATION ---
       if (lastMessage.event_type === 'error' || requestFailed) {
-        throw new Error(lastMessage.message || '请求失败');
+        const finalError = this._parseAndCorrectErrorDetails(lastMessage);
+        // 抛出错误，以便被外层 catch 块捕获，并使用修正后的信息
+        throw new Error(`请求失败 (状态码: ${finalError.status}): ${finalError.message}`);
       }
+      // --- END: MODIFICATION ---
+      
       if (this.failureCount > 0) {
         this.logger.info(`✅ [Auth] 请求成功 - 失败计数已从 ${this.failureCount} 重置为 0`);
       }
@@ -633,8 +678,13 @@ class RequestHandler {
       this._forwardRequest(proxyRequest);
       headerMessage = await messageQueue.dequeue();
       if (headerMessage.event_type === 'error' && headerMessage.status >= 400 && headerMessage.status <= 599) {
-        await this._handleRequestFailureAndSwitch(headerMessage, null); // `res` is not available for streaming chunks here
-        this.logger.warn(`[Request] 收到 ${headerMessage.status} 错误，将在 ${this.retryDelay / 1000}秒后重试...`);
+        
+        // --- START: MODIFICATION ---
+        const correctedMessage = this._parseAndCorrectErrorDetails(headerMessage);
+        await this._handleRequestFailureAndSwitch(correctedMessage, null); // res is not available
+        this.logger.warn(`[Request] 收到 ${correctedMessage.status} 错误，将在 ${this.retryDelay / 1000}秒后重试...`);
+        // --- END: MODIFICATION ---
+        
         if (attempt < this.maxRetries) {
           await new Promise(resolve => setTimeout(resolve, this.retryDelay));
           continue;
@@ -644,7 +694,11 @@ class RequestHandler {
       break;
     }
     if (headerMessage.event_type === 'error' || requestFailed) {
-      return this._sendErrorResponse(res, headerMessage.status, headerMessage.message);
+      // --- START: MODIFICATION ---
+      const finalError = this._parseAndCorrectErrorDetails(headerMessage);
+      // 使用修正后的状态码和消息返回给客户端
+      return this._sendErrorResponse(res, finalError.status, finalError.message);
+      // --- END: MODIFICATION ---
     }
     if (this.failureCount > 0) {
       this.logger.info(`✅ [Auth] 请求成功 - 失败计数已从 ${this.failureCount} 重置为 0`);
@@ -939,6 +993,32 @@ class ProxyServerSystem extends EventEmitter {
           internalClients: this.connectionRegistry.connections.size
         }
       });
+    });
+
+    // --- 新增的 /switch 端点 ---
+    app.get('/switch', async (req, res) => {
+      this.logger.info('[Admin] 接到 /switch 请求，手动触发账号切换。');
+
+      if (this.requestHandler.isAuthSwitching) {
+        const msg = '账号切换已在进行中，请稍后。';
+        this.logger.warn(`[Admin] /switch 请求被拒绝: ${msg}`);
+        return res.status(429).send(msg);
+      }
+
+      const oldIndex = this.requestHandler.currentAuthIndex;
+
+      try {
+        await this.requestHandler._switchToNextAuth();
+        const newIndex = this.requestHandler.currentAuthIndex;
+        
+        const message = `成功将账号从索引 ${oldIndex} 切换到 ${newIndex}。`;
+        this.logger.info(`[Admin] 手动切换成功。 ${message}`);
+        res.status(200).send(message);
+      } catch (error) {
+        const errorMessage = `切换账号失败: ${error.message}`;
+        this.logger.error(`[Admin] 手动切换失败。错误: ${errorMessage}`);
+        res.status(500).send(errorMessage);
+      }
     });
 
     app.use(this._createAuthMiddleware());

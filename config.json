@@ -26,5 +26,9 @@
   "_initialAuthIndex_comment": "初始启动的账号索引，null代表不指定。环境变量: INITIAL_AUTH_INDEX",
 
   "immediateSwitchStatusCodes": ["429,503"],
-  "_immediateSwitchStatusCodes_comment": "用于设置立即切换账号的报错代码，不受报错次数限制影响，可以包含一个或多个用英文逗号分隔的状态码。环境变量: IMMEDIATE_SWITCH_STATUS_CODES"
+  "_immediateSwitchStatusCodes_comment": "用于设置立即切换账号的报错代码，不受报错次数限制影响，可以包含一个或多个用英文逗号分隔的状态码。环境变量: IMMEDIATE_SWITCH_STATUS_CODES",
+
+  "debugMode": false,
+  "_debugMode_comment": "调试模式，true代表开启，false代表关闭。环境变量: DEBUG_MODE"
+
 }

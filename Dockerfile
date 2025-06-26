@@ -28,8 +28,7 @@ RUN apt-get update && apt-get install -y \
 RUN useradd -m -s /bin/bash user
 WORKDIR /home/user
 
-# 复制package.json并安装依赖
-COPY package.json package-lock.json ./
+# 安装依赖
 RUN npm install
 
 # 复制应用文件

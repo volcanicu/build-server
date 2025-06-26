@@ -5,7 +5,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const path = require('path');
 const { firefox } = require('playwright');
-const os =require('os');
+const os = require('os');
 
 
 // ===================================================================================
@@ -60,13 +60,13 @@ class AuthSource {
         return;
       }
     }
-    
+
     // 排序并去重，确保索引列表干净有序
     this.availableIndices = [...new Set(indices)].sort((a, b) => a - b);
 
     this.logger.info(`[Auth] 在 '${this.authMode}' 模式下，检测到 ${this.availableIndices.length} 个认证源。`);
-    if(this.availableIndices.length > 0) {
-        this.logger.info(`[Auth] 可用索引列表: [${this.availableIndices.join(', ')}]`);
+    if (this.availableIndices.length > 0) {
+      this.logger.info(`[Auth] 可用索引列表: [${this.availableIndices.join(', ')}]`);
     }
   }
 
@@ -443,16 +443,16 @@ class RequestHandler {
     if (available.length === 1) return available[0]; // 只有一个，切给自己
 
     const currentIndexInArray = available.indexOf(this.currentAuthIndex);
-    
+
     // 如果当前索引不知为何不在可用列表里，安全起见返回第一个
     if (currentIndexInArray === -1) {
-        this.logger.warn(`[Auth] 当前索引 ${this.currentAuthIndex} 不在可用列表中，将切换到第一个可用索引。`);
-        return available[0];
+      this.logger.warn(`[Auth] 当前索引 ${this.currentAuthIndex} 不在可用列表中，将切换到第一个可用索引。`);
+      return available[0];
     }
-    
+
     // 计算下一个索引在数组中的位置，使用模运算实现循环
     const nextIndexInArray = (currentIndexInArray + 1) % available.length;
-    
+
     return available[nextIndexInArray];
   }
 
@@ -467,10 +467,10 @@ class RequestHandler {
     const totalAuthCount = this.authSource.getAvailableIndices().length;
 
     if (nextAuthIndex === null) {
-        this.logger.error('🔴 [Auth] 无法切换账号，因为没有可用的认证源！');
-        this.isAuthSwitching = false;
-        // 抛出错误以便调用者可以捕获它
-        throw new Error('No available authentication sources to switch to.');
+      this.logger.error('🔴 [Auth] 无法切换账号，因为没有可用的认证源！');
+      this.isAuthSwitching = false;
+      // 抛出错误以便调用者可以捕获它
+      throw new Error('No available authentication sources to switch to.');
     }
 
     this.logger.info('==================================================');
@@ -526,25 +526,25 @@ class RequestHandler {
     return correctedDetails;
   }
 
-    async _handleRequestFailureAndSwitch(errorDetails, res) {
+  async _handleRequestFailureAndSwitch(errorDetails, res) {
     // 创建一个副本进行操作，并进行深度解析
     const correctedDetails = { ...errorDetails };
     if (correctedDetails.message && typeof correctedDetails.message === 'string') {
-        // 增强版正则表达式，能匹配 "HTTP 429" 或 JSON 中的 "code":429 等多种模式
-        const regex = /(?:HTTP|status code)\s*(\d{3})|"code"\s*:\s*(\d{3})/;
-        const match = correctedDetails.message.match(regex);
-        
-        // match[1] 对应 (?:HTTP|status code)\s*(\d{3})
-        // match[2] 对应 "code"\s*:\s*(\d{3})
-        const parsedStatusString = match ? (match[1] || match[2]) : null;
+      // 增强版正则表达式，能匹配 "HTTP 429" 或 JSON 中的 "code":429 等多种模式
+      const regex = /(?:HTTP|status code)\s*(\d{3})|"code"\s*:\s*(\d{3})/;
+      const match = correctedDetails.message.match(regex);
 
-        if (parsedStatusString) {
-            const parsedStatus = parseInt(parsedStatusString, 10);
-            if (parsedStatus >= 400 && parsedStatus <= 599 && correctedDetails.status !== parsedStatus) {
-                this.logger.warn(`[Auth] 修正了错误状态码！原始: ${correctedDetails.status}, 从消息中解析得到: ${parsedStatus}`);
-                correctedDetails.status = parsedStatus;
-            }
+      // match[1] 对应 (?:HTTP|status code)\s*(\d{3})
+      // match[2] 对应 "code"\s*:\s*(\d{3})
+      const parsedStatusString = match ? (match[1] || match[2]) : null;
+
+      if (parsedStatusString) {
+        const parsedStatus = parseInt(parsedStatusString, 10);
+        if (parsedStatus >= 400 && parsedStatus <= 599 && correctedDetails.status !== parsedStatus) {
+          this.logger.warn(`[Auth] 修正了错误状态码！原始: ${correctedDetails.status}, 从消息中解析得到: ${parsedStatus}`);
+          correctedDetails.status = parsedStatus;
         }
+      }
     }
 
     // --- 后续逻辑使用修正后的 correctedDetails ---
@@ -563,24 +563,24 @@ class RequestHandler {
       }
       return; // 结束函数，外层循环将进行重试
     }
-    
+
     // 基于失败计数的切换逻辑
     if (this.config.failureThreshold > 0) {
-        this.failureCount++;
-        this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex}, 状态码: ${correctedDetails.status})`);
-        if (this.failureCount >= this.config.failureThreshold) {
-            this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
-            if (res) this._sendErrorChunkToClient(res, `连续失败${this.failureCount}次，正在尝试切换账号...`);
-            try {
-                await this._switchToNextAuth();
-                if (res) this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
-            } catch (switchError) {
-                this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
-                if (res) this._sendErrorChunkToClient(res, `切换账号失败: ${switchError.message}`);
-            }
+      this.failureCount++;
+      this.logger.warn(`⚠️ [Auth] 请求失败 - 失败计数: ${this.failureCount}/${this.config.failureThreshold} (当前账号索引: ${this.currentAuthIndex}, 状态码: ${correctedDetails.status})`);
+      if (this.failureCount >= this.config.failureThreshold) {
+        this.logger.warn(`🔴 [Auth] 达到失败阈值！准备切换账号...`);
+        if (res) this._sendErrorChunkToClient(res, `连续失败${this.failureCount}次，正在尝试切换账号...`);
+        try {
+          await this._switchToNextAuth();
+          if (res) this._sendErrorChunkToClient(res, `已切换到账号索引 ${this.currentAuthIndex}，请重试`);
+        } catch (switchError) {
+          this.logger.error(`🔴 [Auth] 账号切换失败: ${switchError.message}`);
+          if (res) this._sendErrorChunkToClient(res, `切换账号失败: ${switchError.message}`);
         }
+      }
     } else {
-        this.logger.warn(`[Auth] 请求失败 (状态码: ${correctedDetails.status})。基于计数的自动切换已禁用 (failureThreshold=0)`);
+      this.logger.warn(`[Auth] 请求失败 (状态码: ${correctedDetails.status})。基于计数的自动切换已禁用 (failureThreshold=0)`);
     }
   }
 
@@ -634,94 +634,128 @@ class RequestHandler {
       this.logger.info(`[Request] 已向客户端发送标准错误信号: ${errorMessage}`);
     }
   }
-    async _handlePseudoStreamResponse(proxyRequest, messageQueue, req, res) {
-    // 注意：我们不再立即发送响应头，因为响应类型（SSE或JSON）尚未确定。
-    this.logger.info('[Request] 进入假流式处理流程，将根据原始请求路径决定最终响应格式。');
-    
-    let connectionMaintainer = null;
-    try {
-      // 为了防止连接过早断开，可以先启动一个通用的心跳计时器
-      // 这个计时器只发送注释行，对SSE和JSON客户端都无害，但能保持连接
-      connectionMaintainer = setInterval(() => { if (!res.writableEnded) { res.write(': keep-alive\n\n'); } }, 15000);
 
+  //========================================================
+  // START: MODIFIED SECTION
+  //========================================================
+
+  _getKeepAliveChunk(req) {
+    if (req.path.includes('chat/completions')) {
+      const payload = { id: `chatcmpl-${this._generateRequestId()}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: "gpt-4", choices: [{ index: 0, delta: {}, finish_reason: null }] };
+      return `data: ${JSON.stringify(payload)}\n\n`;
+    }
+    if (req.path.includes('generateContent') || req.path.includes('streamGenerateContent')) {
+      const payload = { candidates: [{ content: { parts: [{ text: "" }], role: "model" }, finishReason: null, index: 0, safetyRatings: [] }] };
+      return `data: ${JSON.stringify(payload)}\n\n`;
+    }
+    // Provide a generic, harmless default
+    return 'data: {}\n\n';
+  }
+
+  async _handlePseudoStreamResponse(proxyRequest, messageQueue, req, res) {
+    // 关键决策点: 通过请求路径判断客户端期望的是流还是普通JSON
+    const originalPath = req.path;
+    const isStreamRequest = originalPath.includes(':stream');
+
+    this.logger.info(`[Request] 假流式处理流程启动，路径: "${originalPath}"，判定为: ${isStreamRequest ? '流式请求' : '非流式请求'}`);
+
+    let connectionMaintainer = null;
+
+    // 只有在确定是流式请求时，才立即发送头并启动心跳
+    if (isStreamRequest) {
+      res.status(200).set({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      });
+      const keepAliveChunk = this._getKeepAliveChunk(req);
+      connectionMaintainer = setInterval(() => { if (!res.writableEnded) res.write(keepAliveChunk); }, 2000);
+    }
+
+    try {
       let lastMessage, requestFailed = false;
       for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
         this.logger.info(`[Request] 请求尝试 #${attempt}/${this.maxRetries}...`);
         this._forwardRequest(proxyRequest);
         lastMessage = await messageQueue.dequeue();
+
         if (lastMessage.event_type === 'error' && lastMessage.status >= 400 && lastMessage.status <= 599) {
           const correctedMessage = this._parseAndCorrectErrorDetails(lastMessage);
-          await this._handleRequestFailureAndSwitch(correctedMessage, res);
+          await this._handleRequestFailureAndSwitch(correctedMessage, isStreamRequest ? res : null); // 仅在流模式下才向客户端发送错误块
+
           const errorText = `收到 ${correctedMessage.status} 错误。${attempt < this.maxRetries ? `将在 ${this.retryDelay / 1000}秒后重试...` : '已达到最大重试次数。'}`;
-          this._sendErrorChunkToClient(res, errorText);
+          this.logger.warn(`[Request] ${errorText}`);
+
+          // 如果是流式请求，则通过数据块通知客户端错误
+          if (isStreamRequest) {
+            this._sendErrorChunkToClient(res, errorText);
+          }
+
           if (attempt < this.maxRetries) {
             await new Promise(resolve => setTimeout(resolve, this.retryDelay));
             continue;
           }
           requestFailed = true;
         }
-        break;
+        break; // 成功则跳出循环
       }
+
+      // 如果所有重试都失败
       if (lastMessage.event_type === 'error' || requestFailed) {
         const finalError = this._parseAndCorrectErrorDetails(lastMessage);
-        throw new Error(`请求失败 (状态码: ${finalError.status}): ${finalError.message}`);
+        // 对于非流式请求，现在可以安全地发送一个完整的错误响应
+        if (!res.headersSent) {
+          this._sendErrorResponse(res, finalError.status, `请求失败: ${finalError.message}`);
+        } else { // 对于流式请求，只能发送最后一个错误块
+          this._sendErrorChunkToClient(res, `请求最终失败 (状态码: ${finalError.status}): ${finalError.message}`);
+        }
+        return; // 结束函数
       }
-      
+
+      // 请求成功
       if (this.failureCount > 0) {
         this.logger.info(`✅ [Auth] 请求成功 - 失败计数已从 ${this.failureCount} 重置为 0`);
       }
       this.failureCount = 0;
-      
+
       const dataMessage = await messageQueue.dequeue();
       const endMessage = await messageQueue.dequeue();
       if (endMessage.type !== 'STREAM_END') this.logger.warn('[Request] 未收到预期的流结束信号。');
 
-      // 停止心跳计时器，因为我们即将发送最终数据
-      if (connectionMaintainer) clearInterval(connectionMaintainer);
-
-      if (dataMessage.data) {
-        // ======================= START: CORE LOGIC CHANGE =======================
-        // 检查原始请求路径，判断客户端期望的是流还是普通JSON
-        const originalPath = req.path;
-        const isStreamRequest = originalPath.includes(':stream');
-
-        if (isStreamRequest) {
-          // 客户端想要一个流，我们模拟它 (保持原有逻辑)
-          this.logger.info(`[Request] 原始请求路径 "${originalPath}" 是流式请求，将模拟SSE响应。`);
-          res.status(200).set({
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive'
-          });
-          // 发送数据块
+      // ======================= 核心逻辑：根据请求类型格式化最终响应 =======================
+      if (isStreamRequest) {
+        // 客户端想要一个流，我们发送SSE数据块
+        if (dataMessage.data) {
           res.write(`data: ${dataMessage.data}\n\n`);
-          // 为提高兼容性，模拟一个 [DONE] 结束标志
-          res.write('data: [DONE]\n\n');
-          this.logger.info('[Request] 已将完整响应体作为模拟SSE事件发送。');
-        } else {
-          // 客户端想要一个普通JSON，我们直接返回它
-          this.logger.info(`[Request] 原始请求路径 "${originalPath}" 是非流式请求，将返回 application/json 响应。`);
+        }
+        res.write('data: [DONE]\n\n');
+        this.logger.info('[Request] 已将完整响应作为模拟SSE事件发送。');
+      } else {
+        // 客户端想要一个普通JSON，我们直接返回它
+        this.logger.info('[Request] 准备发送 application/json 响应。');
+        if (dataMessage.data) {
           try {
             // 确保我们发送的是有效的JSON
             const jsonData = JSON.parse(dataMessage.data);
             res.status(200).json(jsonData);
           } catch (e) {
             this.logger.error(`[Request] 无法将来自浏览器的响应解析为JSON: ${e.message}`);
-            this._sendErrorResponse(res, 500, '代理内部错误：无法解析来自浏览器的响应。');
+            this._sendErrorResponse(res, 500, '代理内部错误：无法解析来自后端的响应。');
           }
+        } else {
+          this._sendErrorResponse(res, 500, '代理内部错误：后端未返回有效数据。');
         }
-        // ======================== END: CORE LOGIC CHANGE ========================
       }
+      // =================================================================================
 
     } catch (error) {
-       // 如果出错时头还没发送，我们可以安全地发送一个错误状态码
-       if (!res.headersSent) {
-         this._handleRequestError(error, res);
-       } else {
-         // 如果头已发送（比如在模拟流时），我们只能在现有连接上发送错误块
-         this.logger.error(`[Request] 请求处理错误 (头已发送): ${error.message}`);
-         this._sendErrorChunkToClient(res, `处理失败: ${error.message}`);
-       }
+      // 这个 catch 块处理意外错误，比如队列超时
+      this.logger.error(`[Request] 假流式处理期间发生意外错误: ${error.message}`);
+      if (!res.headersSent) {
+        this._handleRequestError(error, res);
+      } else {
+        this._sendErrorChunkToClient(res, `处理失败: ${error.message}`);
+      }
     } finally {
       if (connectionMaintainer) clearInterval(connectionMaintainer);
       if (!res.writableEnded) res.end();
@@ -736,13 +770,13 @@ class RequestHandler {
       this._forwardRequest(proxyRequest);
       headerMessage = await messageQueue.dequeue();
       if (headerMessage.event_type === 'error' && headerMessage.status >= 400 && headerMessage.status <= 599) {
-        
+
         // --- START: MODIFICATION ---
         const correctedMessage = this._parseAndCorrectErrorDetails(headerMessage);
         await this._handleRequestFailureAndSwitch(correctedMessage, null); // res is not available
         this.logger.warn(`[Request] 收到 ${correctedMessage.status} 错误，将在 ${this.retryDelay / 1000}秒后重试...`);
         // --- END: MODIFICATION ---
-        
+
         if (attempt < this.maxRetries) {
           await new Promise(resolve => setTimeout(resolve, this.retryDelay));
           continue;
@@ -778,17 +812,7 @@ class RequestHandler {
       this.logger.info('[Request] 真流式响应连接已关闭。');
     }
   }
-  _getKeepAliveChunk(req) {
-    if (req.path.includes('chat/completions')) {
-      const payload = { id: `chatcmpl-${this._generateRequestId()}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: "gpt-4", choices: [{ index: 0, delta: {}, finish_reason: null }] };
-      return `data: ${JSON.stringify(payload)}\n\n`;
-    }
-    if (req.path.includes('generateContent') || req.path.includes('streamGenerateContent')) {
-      const payload = { candidates: [{ content: { parts: [{ text: "" }], role: "model" }, finishReason: null, index: 0, safetyRatings: [] }] };
-      return `data: ${JSON.stringify(payload)}\n\n`;
-    }
-    return 'data: {}\n\n';
-  }
+
   _setResponseHeaders(res, headerMessage) {
     res.status(headerMessage.status || 200);
     const headers = headerMessage.headers || {};
@@ -835,7 +859,8 @@ class ProxyServerSystem extends EventEmitter {
       maxRetries: 3, retryDelay: 2000, browserExecutablePath: null,
       apiKeys: [],
       immediateSwitchStatusCodes: [],
-      initialAuthIndex: null, // 新增：为 initialAuthIndex 提供默认值
+      initialAuthIndex: null,
+      debugMode: false, // [新增] 调试模式默认关闭
     };
 
     const configPath = path.join(__dirname, 'config.json');
@@ -859,12 +884,15 @@ class ProxyServerSystem extends EventEmitter {
     if (process.env.API_KEYS) {
       config.apiKeys = process.env.API_KEYS.split(',');
     }
+    if (process.env.DEBUG_MODE) { // [新增] 从环境变量读取调试模式
+      config.debugMode = process.env.DEBUG_MODE === 'true';
+    }
     // 新增：处理环境变量，它会覆盖 config.json 中的设置
     if (process.env.INITIAL_AUTH_INDEX) {
-        const envIndex = parseInt(process.env.INITIAL_AUTH_INDEX, 10);
-        if (!isNaN(envIndex) && envIndex > 0) {
-            config.initialAuthIndex = envIndex;
-        }
+      const envIndex = parseInt(process.env.INITIAL_AUTH_INDEX, 10);
+      if (!isNaN(envIndex) && envIndex > 0) {
+        config.initialAuthIndex = envIndex;
+      }
     }
 
 
@@ -900,9 +928,10 @@ class ProxyServerSystem extends EventEmitter {
     this.logger.info(`  HTTP 服务端口: ${this.config.httpPort}`);
     this.logger.info(`  监听地址: ${this.config.host}`);
     this.logger.info(`  流式模式: ${this.config.streamingMode}`);
+    this.logger.info(`  调试模式: ${this.config.debugMode ? '已开启' : '已关闭'}`); // [新增] 打印调试模式状态
     // 新增：在日志中显示初始索引的配置
     if (this.config.initialAuthIndex) {
-        this.logger.info(`  指定初始认证索引: ${this.config.initialAuthIndex}`);
+      this.logger.info(`  指定初始认证索引: ${this.config.initialAuthIndex}`);
     }
     // MODIFIED: 日志输出已汉化
     this.logger.info(`  失败计数切换: ${this.config.failureThreshold > 0 ? `连续 ${this.config.failureThreshold} 次失败后切换` : '已禁用'}`);
@@ -926,10 +955,10 @@ class ProxyServerSystem extends EventEmitter {
 
       if (suggestedIndex) {
         if (this.authSource.getAvailableIndices().includes(suggestedIndex)) {
-            this.logger.info(`[System] 使用配置中指定的有效启动索引: ${suggestedIndex}`);
-            startupIndex = suggestedIndex;
+          this.logger.info(`[System] 使用配置中指定的有效启动索引: ${suggestedIndex}`);
+          startupIndex = suggestedIndex;
         } else {
-            this.logger.warn(`[System] 配置中指定的启动索引 ${suggestedIndex} 无效或不存在，将使用第一个可用索引: ${startupIndex}`);
+          this.logger.warn(`[System] 配置中指定的启动索引 ${suggestedIndex} 无效或不存在，将使用第一个可用索引: ${startupIndex}`);
         }
       } else {
         this.logger.info(`[System] 未指定启动索引，将自动使用第一个可用索引: ${startupIndex}`);
@@ -940,13 +969,53 @@ class ProxyServerSystem extends EventEmitter {
       await this._startWebSocketServer();
       this.logger.info(`[System] 代理服务器系统启动完成。`);
       this.emit('started');
-    } catch (error)
-    {
+    } catch (error) {
       this.logger.error(`[System] 启动失败: ${error.message}`);
       this.emit('error', error);
       throw error;
     }
   }
+
+  // [新增] 调试日志中间件
+  _createDebugLogMiddleware() {
+    return (req, res, next) => {
+      if (!this.config.debugMode) {
+        return next();
+      }
+
+      const requestId = this.requestHandler._generateRequestId();
+      const log = this.logger.info.bind(this.logger); // 使用 info 级别以保证显示
+
+      log(`\n\n--- [DEBUG] START INCOMING REQUEST (${requestId}) ---`);
+      log(`[DEBUG][${requestId}] Client IP: ${req.ip}`);
+      log(`[DEBUG][${requestId}] Method: ${req.method}`);
+      log(`[DEBUG][${requestId}] URL: ${req.originalUrl}`);
+      log(`[DEBUG][${requestId}] Headers: ${JSON.stringify(req.headers, null, 2)}`);
+
+      // 智能处理请求体
+      let bodyContent = 'N/A or empty';
+      if (req.body) {
+        if (Buffer.isBuffer(req.body) && req.body.length > 0) {
+          // 对于 buffer，尝试以 utf-8 解码，如果失败则显示原始 buffer 信息
+          try {
+            bodyContent = req.body.toString('utf-8');
+          } catch (e) {
+            bodyContent = `[Non-UTF8 Buffer, size: ${req.body.length} bytes]`;
+          }
+        } else if (typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+          bodyContent = JSON.stringify(req.body, null, 2);
+        } else if (typeof req.body === 'string' && req.body.length > 0) {
+          bodyContent = req.body;
+        }
+      }
+
+      log(`[DEBUG][${requestId}] Body:\n${bodyContent}`);
+      log(`--- [DEBUG] END INCOMING REQUEST (${requestId}) ---\n\n`);
+
+      next();
+    };
+  }
+
 
   _createAuthMiddleware() {
     return (req, res, next) => {
@@ -958,10 +1027,7 @@ class ProxyServerSystem extends EventEmitter {
       let clientKey = null;
       let keySource = null;
 
-      // 在Express中, 所有请求头的键名都会被自动转换为小写。
       const headers = req.headers;
-
-      // 为了健壮性, 同时检查使用连字符(标准)和下划线(常见错误)的头。
       const xGoogApiKey = headers['x-goog-api-key'] || headers['x_goog_api_key'];
       const xApiKey = headers['x-api-key'] || headers['x_api_key'];
       const authHeader = headers.authorization;
@@ -980,26 +1046,44 @@ class ProxyServerSystem extends EventEmitter {
         keySource = 'Query Parameter';
       }
 
-      if (clientKey) {
-        if (serverApiKeys.includes(clientKey)) {
-          this.logger.info(`[Auth] API Key 在 '${keySource}' 中找到，验证通过。`);
+      // --- 认证逻辑开始 ---
 
+      if (clientKey) {
+        // 情况1: 客户端提供了密钥
+        if (serverApiKeys.includes(clientKey)) {
+          // 密钥有效，通过
+          if (this.config.debugMode) {
+              this.logger.debug(`[Auth][Debug] API Key 在 '${keySource}' 中找到，验证通过。`);
+          }
           if (keySource === 'Query Parameter') {
             delete req.query.key;
-            this.logger.debug(`[Auth-Cleanup] 已从 req.query 中移除 API Key，以确保请求纯净。`);
           }
           return next();
         } else {
-          this.logger.warn(`[Auth] 拒绝请求: 无效的 API Key。IP: ${req.ip}, Source: ${keySource}, Key: '${clientKey}'`);
+          // 密钥无效，拒绝
+          if (this.config.debugMode) {
+            this.logger.warn(`[Auth][Debug] 拒绝请求: 无效的 API Key。IP: ${req.ip}, Path: ${req.path}`);
+            this.logger.debug(`[Auth][Debug] 来源: ${keySource}`);
+            this.logger.debug(`[Auth][Debug] 提供的错误密钥: '${clientKey}'`);
+            this.logger.debug(`[Auth][Debug] 已加载的有效密钥: [${serverApiKeys.join(', ')}]`);
+          } else {
+            this.logger.warn(`[Auth] 拒绝请求: 无效的 API Key。IP: ${req.ip}, Path: ${req.path}`);
+          }
           return res.status(401).json({ error: { message: "Invalid API key provided." } });
         }
       }
 
+      // 情况2: 客户端未提供密钥
+      // 无论是否在调试模式下，都记录此基本警告
       this.logger.warn(`[Auth] 拒绝受保护的请求: 缺少 API Key。IP: ${req.ip}, Path: ${req.path}`);
-      this.logger.debug(`[Auth-Debug] 未在任何标准位置找到API Key。`);
-      this.logger.debug(`[Auth-Debug] 搜索的Headers: ${JSON.stringify(headers)}`);
-      this.logger.debug(`[Auth-Debug] 搜索的Query: ${JSON.stringify(req.query)}`);
-      this.logger.debug(`[Auth-Debug] 已加载的API Keys: [${serverApiKeys.join(', ')}]`);
+      
+      // 仅在调试模式下，才记录额外的详细信息
+      if (this.config.debugMode) {
+        this.logger.debug(`[Auth][Debug] 未在任何标准位置找到API Key。`);
+        this.logger.debug(`[Auth][Debug] 搜索的 Headers: ${JSON.stringify(headers, null, 2)}`);
+        this.logger.debug(`[Auth][Debug] 搜索的 Query: ${JSON.stringify(req.query)}`);
+        this.logger.debug(`[Auth][Debug] 已加载的有效密钥: [${serverApiKeys.join(', ')}]`);
+      }
 
       return res.status(401).json({ error: { message: "Access denied. A valid API key was not found in headers or query parameters." } });
     };
@@ -1018,16 +1102,37 @@ class ProxyServerSystem extends EventEmitter {
 
   _createExpressApp() {
     const app = express();
+    // [修改] body-parser 中间件需要先于我们的调试中间件
     app.use(express.json({ limit: '100mb' }));
     app.use(express.raw({ type: '*/*', limit: '100mb' }));
+
+    // [新增] 插入调试日志中间件。它会在body解析后，但在任何业务逻辑之前运行。
+    app.use(this._createDebugLogMiddleware());
 
     app.get('/admin/set-mode', (req, res) => {
       const newMode = req.query.mode;
       if (newMode === 'fake' || newMode === 'real') {
         this.streamingMode = newMode;
+        this.logger.info(`[Admin] 流式模式已切换为: ${this.streamingMode}`);
         res.status(200).send(`流式模式已切换为: ${this.streamingMode}`);
       } else {
         res.status(400).send('无效模式. 请用 "fake" 或 "real".');
+      }
+    });
+
+    // [新增] 切换调试模式的管理端点
+    app.get('/admin/set-debug', (req, res) => {
+      const enable = req.query.enable;
+      if (enable === 'true') {
+        this.config.debugMode = true;
+        this.logger.info('[Admin] 调试模式已开启 (Debug Mode ON)');
+        res.status(200).send('调试模式已开启 (Debug Mode ON)');
+      } else if (enable === 'false') {
+        this.config.debugMode = false;
+        this.logger.info('[Admin] 调试模式已关闭 (Debug Mode OFF)');
+        res.status(200).send('调试模式已关闭 (Debug Mode OFF)');
+      } else {
+        res.status(400).send('无效的参数. 请使用 ?enable=true 或 ?enable=false');
       }
     });
 
@@ -1037,6 +1142,7 @@ class ProxyServerSystem extends EventEmitter {
         uptime: process.uptime(),
         config: {
           streamingMode: this.streamingMode,
+          debugMode: this.config.debugMode, // [新增] 在健康检查中报告调试模式状态
           failureThreshold: this.config.failureThreshold,
           immediateSwitchStatusCodes: this.config.immediateSwitchStatusCodes,
           maxRetries: this.config.maxRetries,
@@ -1074,7 +1180,7 @@ class ProxyServerSystem extends EventEmitter {
       try {
         await this.requestHandler._switchToNextAuth();
         const newIndex = this.requestHandler.currentAuthIndex;
-        
+
         const message = `成功将账号从索引 ${oldIndex} 切换到 ${newIndex}。`;
         this.logger.info(`[Admin] 手动切换成功。 ${message}`);
         res.status(200).send(message);

@@ -665,13 +665,15 @@ class RequestHandler {
   }
 
   async processRequest(req, res) {
-    this.logger.info(`[请求] 处理请求: ${req.method} ${req.path}`);
+    // 提前获取模型名称和当前账号
+    const modelName = this._getModelFromRequest(req);
+    const currentAccount = this.currentAuthIndex;
+
+    // 新增的合并日志行，报告路径、账号和模型
+    this.logger.info(`[请求] ${req.method} ${req.path} | 账号: ${currentAccount} | 模型: 🤖 ${modelName}`);
     
     // --- 升级的统计逻辑 ---
     this.serverSystem.stats.totalCalls++;
-    const currentAccount = this.browserManager.currentAuthIndex;
-    const modelName = this._getModelFromRequest(req);
-
     if (this.serverSystem.stats.accountCalls[currentAccount]) {
         this.serverSystem.stats.accountCalls[currentAccount].total = (this.serverSystem.stats.accountCalls[currentAccount].total || 0) + 1;
         this.serverSystem.stats.accountCalls[currentAccount].models[modelName] = (this.serverSystem.stats.accountCalls[currentAccount].models[modelName] || 0) + 1;

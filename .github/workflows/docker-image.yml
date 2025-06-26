@@ -1,0 +1,35 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # 必须授予写入 packages (GHCR) 的权限
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}  # 自动使用 GitHub Token 认证
+
+      - name: Build and push Docker image
+        run: |
+          # 设置镜像标签
+          IMAGE_TAG=0623
+          # 构建镜像
+          docker build . --file Dockerfile --tag ghcr.io/${{ github.repository_owner }}/build-server:$IMAGE_TAG
+          # 推送镜像
+          docker push ghcr.io/${{ github.repository_owner }}/build-server:$IMAGE_TAG
+

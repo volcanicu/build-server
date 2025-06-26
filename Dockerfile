@@ -29,10 +29,10 @@ RUN useradd -m -s /bin/bash user
 WORKDIR /home/user
 
 # 安装依赖
+COPY package*.json ./
 RUN npm install
 
 # 复制应用文件
-COPY package*.json ./
 COPY unified-server.js dark-browser.js ./
 COPY auth/ ./auth/
 COPY camoufox-linux/ ./camoufox-linux/

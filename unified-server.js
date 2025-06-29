@@ -57,8 +57,8 @@ class AuthSource {
         const authFiles = files.filter(file => /^auth-\d+\.json$/.test(file));
         // 修正：正确解析文件名中的捕获组 (match[1])
         indices = authFiles.map(file => {
-            const match = file.match(/^auth-(\d+)\.json$/);
-            return parseInt(match[1], 10);
+          const match = file.match(/^auth-(\d+)\.json$/);
+          return parseInt(match[1], 10);
         });
       } catch (error) {
         this.logger.error(`[认证] 扫描 "auth/" 目录失败: ${error.message}`);
@@ -78,14 +78,14 @@ class AuthSource {
     const allIndices = [...new Set([...this.initialIndices, ...runtimeIndices])].sort((a, b) => a - b);
     return allIndices;
   }
-  
+
   // 新增方法：为仪表盘获取详细信息
   getAccountDetails() {
-      const allIndices = this.getAvailableIndices();
-      return allIndices.map(index => ({
-          index,
-          source: this.runtimeAuths.has(index) ? 'temporary' : this.authMode
-      }));
+    const allIndices = this.getAvailableIndices();
+    return allIndices.map(index => ({
+      index,
+      source: this.runtimeAuths.has(index) ? 'temporary' : this.authMode
+    }));
   }
 
 
@@ -99,11 +99,11 @@ class AuthSource {
       this.logger.error(`[认证] 请求了无效或不存在的认证索引: ${index}`);
       return null;
     }
-    
+
     // 优先使用运行时（临时）的认证信息
     if (this.runtimeAuths.has(index)) {
-        this.logger.info(`[认证] 使用索引 ${index} 的临时认证源。`);
-        return this.runtimeAuths.get(index);
+      this.logger.info(`[认证] 使用索引 ${index} 的临时认证源。`);
+      return this.runtimeAuths.get(index);
     }
 
     let jsonString;
@@ -134,37 +134,37 @@ class AuthSource {
       return null;
     }
   }
-  
+
   // 新增方法：动态添加账号
   addAccount(index, authData) {
-      if (typeof index !== 'number' || index <= 0) {
-          return { success: false, message: "索引必须是一个正数。" };
+    if (typeof index !== 'number' || index <= 0) {
+      return { success: false, message: "索引必须是一个正数。" };
+    }
+    if (this.initialIndices.includes(index)) {
+      return { success: false, message: `索引 ${index} 已作为永久账号存在。` };
+    }
+    try {
+      // 验证 authData 是否为有效的JSON对象
+      if (typeof authData !== 'object' || authData === null) {
+        throw new Error("提供的数据不是一个有效的对象。");
       }
-      if (this.initialIndices.includes(index)) {
-          return { success: false, message: `索引 ${index} 已作为永久账号存在。` };
-      }
-      try {
-          // 验证 authData 是否为有效的JSON对象
-          if(typeof authData !== 'object' || authData === null) {
-              throw new Error("提供的数据不是一个有效的对象。");
-          }
-          this.runtimeAuths.set(index, authData);
-          this.logger.info(`[认证] 成功添加索引为 ${index} 的临时账号。`);
-          return { success: true, message: `账号 ${index} 已临时添加。` };
-      } catch (e) {
-          this.logger.error(`[认证] 添加临时账号 ${index} 失败: ${e.message}`);
-          return { success: false, message: `添加账号失败: ${e.message}` };
-      }
+      this.runtimeAuths.set(index, authData);
+      this.logger.info(`[认证] 成功添加索引为 ${index} 的临时账号。`);
+      return { success: true, message: `账号 ${index} 已临时添加。` };
+    } catch (e) {
+      this.logger.error(`[认证] 添加临时账号 ${index} 失败: ${e.message}`);
+      return { success: false, message: `添加账号失败: ${e.message}` };
+    }
   }
 
   // 新增方法：动态删除账号
   removeAccount(index) {
-      if (!this.runtimeAuths.has(index)) {
-          return { success: false, message: `索引 ${index} 不是一个临时账号，无法移除。` };
-      }
-      this.runtimeAuths.delete(index);
-      this.logger.info(`[认证] 成功移除索引为 ${index} 的临时账号。`);
-      return { success: true, message: `账号 ${index} 已移除。` };
+    if (!this.runtimeAuths.has(index)) {
+      return { success: false, message: `索引 ${index} 不是一个临时账号，无法移除。` };
+    }
+    this.runtimeAuths.delete(index);
+    this.logger.info(`[认证] 成功移除索引为 ${index} 的临时账号。`);
+    return { success: true, message: `账号 ${index} 已移除。` };
   }
 }
 
@@ -244,7 +244,7 @@ class BrowserManager {
     let buildScriptContent;
     try {
       const scriptFilePath = path.join(__dirname, this.scriptFileName);
-      if(fs.existsSync(scriptFilePath)){
+      if (fs.existsSync(scriptFilePath)) {
         buildScriptContent = fs.readFileSync(scriptFilePath, 'utf-8');
         this.logger.info(`✅ [浏览器] 成功读取注入脚本 "${this.scriptFileName}"`);
       } else {
@@ -280,7 +280,7 @@ class BrowserManager {
       this.logger.info('[浏览器] 等待编辑器出现，最长120秒...');
       await editorContainerLocator.waitFor({ state: 'visible', timeout: 120000 });
       this.logger.info('[浏览器] 编辑器已出现，准备粘贴脚本。');
-      
+
       this.logger.info('[浏览器] 等待5秒，之后将在页面下方执行一次模拟点击以确保页面激活...');
       await this.page.waitForTimeout(5000);
 
@@ -353,24 +353,24 @@ class LoggingService {
     const time = this._getFormattedTime();
     return `[${level}] ${time} [${this.serviceName}] - ${message}`;
   }
-  
+
   // info 级别使用特殊格式，不显示 [INFO]
-  info(message) { 
+  info(message) {
     const time = this._getFormattedTime();
-    console.log(`${time} [${this.serviceName}] - ${message}`); 
+    console.log(`${time} [${this.serviceName}] - ${message}`);
   }
 
-  error(message) { 
-    console.error(this._formatMessage('ERROR', message)); 
+  error(message) {
+    console.error(this._formatMessage('ERROR', message));
   }
 
-  warn(message) { 
-    console.warn(this._formatMessage('WARN', message)); 
+  warn(message) {
+    console.warn(this._formatMessage('WARN', message));
   }
-  
-  debug(message) { 
-    if(process.env.DEBUG_MODE === 'true') {
-        console.debug(this._formatMessage('DEBUG', message));
+
+  debug(message) {
+    if (process.env.DEBUG_MODE === 'true') {
+      console.debug(this._formatMessage('DEBUG', message));
     }
   }
 }
@@ -640,28 +640,28 @@ class RequestHandler {
   }
 
   _getModelFromRequest(req) {
-      let body = req.body;
-      
-      if (Buffer.isBuffer(body)) {
-          try {
-              body = JSON.parse(body.toString('utf-8'));
-          } catch (e) { body = {}; }
-      } else if (typeof body === 'string') {
-          try {
-              body = JSON.parse(body);
-          } catch(e) { body = {}; }
-      }
+    let body = req.body;
 
-      if (body && typeof body === 'object') {
-          if (body.model) return body.model;
-          if (body.generation_config && body.generation_config.model) return body.generation_config.model;
-      }
-      
-      const match = req.path.match(/\/models\/([^/:]+)/);
-      if (match && match[1]) {
-          return match[1];
-      }
-      return 'unknown_model';
+    if (Buffer.isBuffer(body)) {
+      try {
+        body = JSON.parse(body.toString('utf-8'));
+      } catch (e) { body = {}; }
+    } else if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch (e) { body = {}; }
+    }
+
+    if (body && typeof body === 'object') {
+      if (body.model) return body.model;
+      if (body.generation_config && body.generation_config.model) return body.generation_config.model;
+    }
+
+    const match = req.path.match(/\/models\/([^/:]+)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+    return 'unknown_model';
   }
 
   async processRequest(req, res) {
@@ -671,19 +671,19 @@ class RequestHandler {
 
     // 新增的合并日志行，报告路径、账号和模型
     this.logger.info(`[请求] ${req.method} ${req.path} | 账号: ${currentAccount} | 模型: 🤖 ${modelName}`);
-    
+
     // --- 升级的统计逻辑 ---
     this.serverSystem.stats.totalCalls++;
     if (this.serverSystem.stats.accountCalls[currentAccount]) {
-        this.serverSystem.stats.accountCalls[currentAccount].total = (this.serverSystem.stats.accountCalls[currentAccount].total || 0) + 1;
-        this.serverSystem.stats.accountCalls[currentAccount].models[modelName] = (this.serverSystem.stats.accountCalls[currentAccount].models[modelName] || 0) + 1;
+      this.serverSystem.stats.accountCalls[currentAccount].total = (this.serverSystem.stats.accountCalls[currentAccount].total || 0) + 1;
+      this.serverSystem.stats.accountCalls[currentAccount].models[modelName] = (this.serverSystem.stats.accountCalls[currentAccount].models[modelName] || 0) + 1;
     } else {
-        this.serverSystem.stats.accountCalls[currentAccount] = {
-            total: 1,
-            models: { [modelName]: 1 }
-        };
+      this.serverSystem.stats.accountCalls[currentAccount] = {
+        total: 1,
+        models: { [modelName]: 1 }
+      };
     }
-    
+
     if (!this.connectionRegistry.hasActiveConnections()) {
       return this._sendErrorResponse(res, 503, '没有可用的浏览器连接');
     }
@@ -925,11 +925,11 @@ class ProxyServerSystem extends EventEmitter {
     this.logger = new LoggingService('ProxySystem');
     this._loadConfiguration();
     this.streamingMode = this.config.streamingMode;
-    
+
     // 升级后的统计结构
     this.stats = {
-        totalCalls: 0,
-        accountCalls: {} // e.g., { "1": { total: 10, models: { "gemini-pro": 5, "gpt-4": 5 } } }
+      totalCalls: 0,
+      accountCalls: {} // e.g., { "1": { total: 10, models: { "gemini-pro": 5, "gpt-4": 5 } } }
     };
 
     this.authSource = new AuthSource(this.logger);
@@ -1034,9 +1034,9 @@ class ProxyServerSystem extends EventEmitter {
     try {
       // 初始化统计对象
       this.authSource.getAvailableIndices().forEach(index => {
-          this.stats.accountCalls[index] = { total: 0, models: {} };
+        this.stats.accountCalls[index] = { total: 0, models: {} };
       });
-      
+
       let startupIndex = this.authSource.getFirstAvailableIndex();
       const suggestedIndex = this.config.initialAuthIndex;
 
@@ -1081,13 +1081,13 @@ class ProxyServerSystem extends EventEmitter {
       let bodyContent = '无或空';
       if (req.body) {
         if (Buffer.isBuffer(req.body) && req.body.length > 0) {
-            try {
-                bodyContent = JSON.stringify(JSON.parse(req.body.toString('utf-8')), null, 2);
-            } catch (e) {
-                bodyContent = `[无法解析为JSON的Buffer, 大小: ${req.body.length} 字节]`;
-            }
+          try {
+            bodyContent = JSON.stringify(JSON.parse(req.body.toString('utf-8')), null, 2);
+          } catch (e) {
+            bodyContent = `[无法解析为JSON的Buffer, 大小: ${req.body.length} 字节]`;
+          }
         } else if (typeof req.body === 'object' && Object.keys(req.body).length > 0) {
-           bodyContent = JSON.stringify(req.body, null, 2);
+          bodyContent = JSON.stringify(req.body, null, 2);
         }
       }
 
@@ -1131,7 +1131,7 @@ class ProxyServerSystem extends EventEmitter {
       if (clientKey) {
         if (serverApiKeys.includes(clientKey)) {
           if (this.config.debugMode) {
-              this.logger.debug(`[认证][调试] 在 '${keySource}' 中找到API密钥，验证通过。`);
+            this.logger.debug(`[认证][调试] 在 '${keySource}' 中找到API密钥，验证通过。`);
           }
           if (keySource === '查询参数') {
             delete req.query.key;
@@ -1151,7 +1151,7 @@ class ProxyServerSystem extends EventEmitter {
       }
 
       this.logger.warn(`[认证] 拒绝受保护的请求: 缺少API密钥。IP: ${req.ip}, 路径: ${req.path}`);
-      
+
       if (this.config.debugMode) {
         this.logger.debug(`[认证][调试] 未在任何标准位置找到API密钥。`);
         this.logger.debug(`[认证][调试] 搜索的请求头: ${JSON.stringify(headers, null, 2)}`);
@@ -1176,162 +1176,162 @@ class ProxyServerSystem extends EventEmitter {
   }
 
   // [可复制并覆盖]
-// 请用此版本完整替换您文件中的 _createExpressApp 方法
+  // 请用此版本完整替换您文件中的 _createExpressApp 方法
   _createExpressApp() {
     const app = express();
     app.use(express.json({ limit: '100mb' }));
     app.use(express.raw({ type: '*/*', limit: '100mb' }));
     app.use((req, res, next) => {
-        if (req.is('application/json') && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
-          // Already parsed correctly by express.json()
-        } else if (Buffer.isBuffer(req.body)) {
-          const bodyStr = req.body.toString('utf-8');
-          if (bodyStr) {
-            try {
-              req.body = JSON.parse(bodyStr);
-            } catch (e) {
-              // Not JSON, leave as buffer.
-            }
+      if (req.is('application/json') && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+        // Already parsed correctly by express.json()
+      } else if (Buffer.isBuffer(req.body)) {
+        const bodyStr = req.body.toString('utf-8');
+        if (bodyStr) {
+          try {
+            req.body = JSON.parse(bodyStr);
+          } catch (e) {
+            // Not JSON, leave as buffer.
           }
         }
-        next();
+      }
+      next();
     });
-    
+
     app.use(this._createDebugLogMiddleware());
-    
+
     // --- 仪表盘和API端点 ---
-    
+
     // 公开端点：提供仪表盘HTML
     app.get('/dashboard', (req, res) => {
-        res.send(this._getDashboardHtml());
+      res.send(this._getDashboardHtml());
     });
-    
+
     // 公开端点：用于仪表盘验证API密钥
     app.post('/dashboard/verify-key', (req, res) => {
-        const { key } = req.body;
-        const serverApiKeys = this.config.apiKeys;
+      const { key } = req.body;
+      const serverApiKeys = this.config.apiKeys;
 
-        if (!serverApiKeys || serverApiKeys.length === 0) {
-            this.logger.info('[管理] 服务器未配置API密钥，自动授予仪表盘访问权限。');
-            return res.json({ success: true });
-        }
+      if (!serverApiKeys || serverApiKeys.length === 0) {
+        this.logger.info('[管理] 服务器未配置API密钥，自动授予仪表盘访问权限。');
+        return res.json({ success: true });
+      }
 
-        if (key && serverApiKeys.includes(key)) {
-            this.logger.info('[管理] 仪表盘API密钥验证成功。');
-            return res.json({ success: true });
-        }
-        
-        this.logger.warn(`[管理] 仪表盘API密钥验证失败。`);
-        res.status(401).json({ success: false, message: '无效的API密钥。' });
+      if (key && serverApiKeys.includes(key)) {
+        this.logger.info('[管理] 仪表盘API密钥验证成功。');
+        return res.json({ success: true });
+      }
+
+      this.logger.warn(`[管理] 仪表盘API密钥验证失败。`);
+      res.status(401).json({ success: false, message: '无效的API密钥。' });
     });
 
     // 中间件：保护仪表盘API路由
     const dashboardApiAuth = (req, res, next) => {
-        const serverApiKeys = this.config.apiKeys;
-        if (!serverApiKeys || serverApiKeys.length === 0) {
-            return next(); // 未配置密钥，跳过认证
-        }
+      const serverApiKeys = this.config.apiKeys;
+      if (!serverApiKeys || serverApiKeys.length === 0) {
+        return next(); // 未配置密钥，跳过认证
+      }
 
-        const clientKey = req.headers['x-dashboard-auth'];
-        if (clientKey && serverApiKeys.includes(clientKey)) {
-            return next();
-        }
-        
-        this.logger.warn(`[管理] 拒绝未经授权的仪表盘API请求。IP: ${req.ip}, 路径: ${req.path}`);
-        res.status(401).json({ error: { message: 'Unauthorized dashboard access' } });
+      const clientKey = req.headers['x-dashboard-auth'];
+      if (clientKey && serverApiKeys.includes(clientKey)) {
+        return next();
+      }
+
+      this.logger.warn(`[管理] 拒绝未经授权的仪表盘API请求。IP: ${req.ip}, 路径: ${req.path}`);
+      res.status(401).json({ error: { message: 'Unauthorized dashboard access' } });
     };
 
     const dashboardApiRouter = express.Router();
     dashboardApiRouter.use(dashboardApiAuth);
 
     dashboardApiRouter.get('/data', (req, res) => {
-        res.json({
-            status: {
-                uptime: process.uptime(),
-                streamingMode: this.streamingMode,
-                debugMode: this.config.debugMode,
-                authMode: this.authSource.authMode,
-                apiKeyAuth: (this.config.apiKeys && this.config.apiKeys.length > 0) ? '已启用' : '已禁用',
-                isAuthSwitching: this.requestHandler.isAuthSwitching,
-                browserConnected: !!this.browserManager.browser,
-                internalWsClients: this.connectionRegistry.connections.size
-            },
-            auth: {
-                currentAuthIndex: this.requestHandler.currentAuthIndex,
-                accounts: this.authSource.getAccountDetails(),
-                failureCount: this.requestHandler.failureCount,
-            },
-            stats: this.stats,
-            config: this.config
-        });
+      res.json({
+        status: {
+          uptime: process.uptime(),
+          streamingMode: this.streamingMode,
+          debugMode: this.config.debugMode,
+          authMode: this.authSource.authMode,
+          apiKeyAuth: (this.config.apiKeys && this.config.apiKeys.length > 0) ? '已启用' : '已禁用',
+          isAuthSwitching: this.requestHandler.isAuthSwitching,
+          browserConnected: !!this.browserManager.browser,
+          internalWsClients: this.connectionRegistry.connections.size
+        },
+        auth: {
+          currentAuthIndex: this.requestHandler.currentAuthIndex,
+          accounts: this.authSource.getAccountDetails(),
+          failureCount: this.requestHandler.failureCount,
+        },
+        stats: this.stats,
+        config: this.config
+      });
     });
-    
+
     dashboardApiRouter.post('/config', (req, res) => {
-        const newConfig = req.body;
-        try {
-            if (newConfig.hasOwnProperty('streamingMode') && ['real', 'fake'].includes(newConfig.streamingMode)) {
-                this.config.streamingMode = newConfig.streamingMode;
-                this.streamingMode = newConfig.streamingMode;
-                this.requestHandler.serverSystem.streamingMode = newConfig.streamingMode;
-            }
-            if (newConfig.hasOwnProperty('debugMode') && typeof newConfig.debugMode === 'boolean') {
-                this.config.debugMode = newConfig.debugMode;
-            }
-            if (newConfig.hasOwnProperty('failureThreshold')) {
-                this.config.failureThreshold = parseInt(newConfig.failureThreshold, 10) || 0;
-            }
-             if (newConfig.hasOwnProperty('maxRetries')) {
-                const retries = parseInt(newConfig.maxRetries, 10);
-                this.config.maxRetries = retries >= 0 ? retries : 3;
-                this.requestHandler.maxRetries = this.config.maxRetries;
-            }
-            if (newConfig.hasOwnProperty('retryDelay')) {
-                this.config.retryDelay = parseInt(newConfig.retryDelay, 10) || 2000;
-                this.requestHandler.retryDelay = this.config.retryDelay;
-            }
-            if (newConfig.hasOwnProperty('immediateSwitchStatusCodes')) {
-                if (Array.isArray(newConfig.immediateSwitchStatusCodes)) {
-                    this.config.immediateSwitchStatusCodes = newConfig.immediateSwitchStatusCodes
-                        .map(c => parseInt(c, 10))
-                        .filter(c => !isNaN(c));
-                }
-            }
-            this.logger.info('[管理] 配置已通过仪表盘动态更新。');
-            res.status(200).json({ success: true, message: '配置已临时更新。' });
-        } catch (error) {
-            this.logger.error(`[管理] 更新配置失败: ${error.message}`);
-            res.status(500).json({ success: false, message: error.message });
+      const newConfig = req.body;
+      try {
+        if (newConfig.hasOwnProperty('streamingMode') && ['real', 'fake'].includes(newConfig.streamingMode)) {
+          this.config.streamingMode = newConfig.streamingMode;
+          this.streamingMode = newConfig.streamingMode;
+          this.requestHandler.serverSystem.streamingMode = newConfig.streamingMode;
         }
+        if (newConfig.hasOwnProperty('debugMode') && typeof newConfig.debugMode === 'boolean') {
+          this.config.debugMode = newConfig.debugMode;
+        }
+        if (newConfig.hasOwnProperty('failureThreshold')) {
+          this.config.failureThreshold = parseInt(newConfig.failureThreshold, 10) || 0;
+        }
+        if (newConfig.hasOwnProperty('maxRetries')) {
+          const retries = parseInt(newConfig.maxRetries, 10);
+          this.config.maxRetries = retries >= 0 ? retries : 3;
+          this.requestHandler.maxRetries = this.config.maxRetries;
+        }
+        if (newConfig.hasOwnProperty('retryDelay')) {
+          this.config.retryDelay = parseInt(newConfig.retryDelay, 10) || 2000;
+          this.requestHandler.retryDelay = this.config.retryDelay;
+        }
+        if (newConfig.hasOwnProperty('immediateSwitchStatusCodes')) {
+          if (Array.isArray(newConfig.immediateSwitchStatusCodes)) {
+            this.config.immediateSwitchStatusCodes = newConfig.immediateSwitchStatusCodes
+              .map(c => parseInt(c, 10))
+              .filter(c => !isNaN(c));
+          }
+        }
+        this.logger.info('[管理] 配置已通过仪表盘动态更新。');
+        res.status(200).json({ success: true, message: '配置已临时更新。' });
+      } catch (error) {
+        this.logger.error(`[管理] 更新配置失败: ${error.message}`);
+        res.status(500).json({ success: false, message: error.message });
+      }
     });
 
     dashboardApiRouter.post('/accounts', (req, res) => {
-        const { index, authData } = req.body;
-        if (!index || !authData) {
-            return res.status(400).json({ success: false, message: "必须提供索引和认证数据。" });
-        }
-        
-        let parsedData;
-        try {
-            parsedData = (typeof authData === 'string') ? JSON.parse(authData) : authData;
-        } catch(e) {
-            return res.status(400).json({ success: false, message: "认证数据的JSON格式无效。" });
-        }
+      const { index, authData } = req.body;
+      if (!index || !authData) {
+        return res.status(400).json({ success: false, message: "必须提供索引和认证数据。" });
+      }
 
-        const result = this.authSource.addAccount(parseInt(index, 10), parsedData);
-        if (result.success) {
-            if(!this.stats.accountCalls.hasOwnProperty(index)) {
-                this.stats.accountCalls[index] = { total: 0, models: {} };
-            }
+      let parsedData;
+      try {
+        parsedData = (typeof authData === 'string') ? JSON.parse(authData) : authData;
+      } catch (e) {
+        return res.status(400).json({ success: false, message: "认证数据的JSON格式无效。" });
+      }
+
+      const result = this.authSource.addAccount(parseInt(index, 10), parsedData);
+      if (result.success) {
+        if (!this.stats.accountCalls.hasOwnProperty(index)) {
+          this.stats.accountCalls[index] = { total: 0, models: {} };
         }
-        res.status(result.success ? 200 : 400).json(result);
+      }
+      res.status(result.success ? 200 : 400).json(result);
     });
 
     dashboardApiRouter.delete('/accounts/:index', (req, res) => {
-        const index = parseInt(req.params.index, 10);
-        const result = this.authSource.removeAccount(index);
-        res.status(result.success ? 200 : 400).json(result);
+      const index = parseInt(req.params.index, 10);
+      const result = this.authSource.removeAccount(index);
+      res.status(result.success ? 200 : 400).json(result);
     });
-    
+
     // 挂载受保护的仪表盘API路由
     app.use('/dashboard', dashboardApiRouter);
 
@@ -1356,7 +1356,7 @@ class ProxyServerSystem extends EventEmitter {
         res.status(500).send(errorMessage);
       }
     });
-    
+
     app.get('/health', (req, res) => {
       res.status(200).json({
         status: 'healthy',
@@ -1398,7 +1398,7 @@ class ProxyServerSystem extends EventEmitter {
 
     return app;
   }
-  
+
     _getDashboardHtml() {
     return `
 <!DOCTYPE html>
@@ -1721,29 +1721,53 @@ class ProxyServerSystem extends EventEmitter {
                 });
             }
 
-            async function checkAndInitiate() {
-                let apiKey = sessionStorage.getItem(API_KEY_SESSION_STORAGE);
-                if (!apiKey) {
-                    apiKey = prompt("请输入API密钥以访问仪表盘:");
-                    if (!apiKey) { document.body.innerHTML = '<h1>访问被拒绝</h1>'; return; }
-                }
-                
+            async function verifyAndLoad(keyToVerify) {
                 try {
-                    const response = await fetch(\`\${API_BASE}/verify-key\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: apiKey }) });
+                    const response = await fetch(\`\${API_BASE}/verify-key\`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key: keyToVerify || '' })
+                    });
                     const result = await response.json();
                     
                     if (response.ok && result.success) {
-                        sessionStorage.setItem(API_KEY_SESSION_STORAGE, apiKey);
+                        if (keyToVerify) {
+                           sessionStorage.setItem(API_KEY_SESSION_STORAGE, keyToVerify);
+                        }
                         mainContainer.style.display = 'block';
                         initializeDashboardListeners();
                         fetchData();
                         setInterval(fetchData, 5000);
+                        return true;
                     } else {
                         sessionStorage.removeItem(API_KEY_SESSION_STORAGE);
-                        document.body.innerHTML = \`<h1>认证失败: \${result.message || '无效的密钥'}</h1>\`;
+                        return false;
                     }
                 } catch (err) {
                     document.body.innerHTML = \`<h1>认证时发生错误: \${err.message}</h1>\`;
+                    return false;
+                }
+            }
+
+            async function checkAndInitiate() {
+                const storedApiKey = sessionStorage.getItem(API_KEY_SESSION_STORAGE);
+                
+                // 尝试使用已存储的密钥或空密钥进行验证
+                const initialCheckSuccess = await verifyAndLoad(storedApiKey);
+
+                // 如果初次验证失败，说明服务器需要密钥，而我们没有提供或提供了错误的密钥
+                if (!initialCheckSuccess) {
+                    const newApiKey = prompt("请输入API密钥以访问仪表盘 (服务器需要认证):");
+                    if (newApiKey) {
+                        // 使用用户新输入的密钥再次尝试
+                        const secondCheckSuccess = await verifyAndLoad(newApiKey);
+                        if (!secondCheckSuccess) {
+                           document.body.innerHTML = \`<h1>认证失败: 无效的API密钥</h1>\`;
+                        }
+                    } else {
+                        // 用户取消了输入
+                        document.body.innerHTML = '<h1>访问被拒绝</h1>';
+                    }
                 }
             }
             
@@ -1754,7 +1778,7 @@ class ProxyServerSystem extends EventEmitter {
 </html>
     `;
   }
-  
+
 
 
   async _startWebSocketServer() {

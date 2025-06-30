@@ -1175,9 +1175,7 @@ class ProxyServerSystem extends EventEmitter {
     });
   }
 
-  // [可复制并覆盖]
-  // 请用此版本完整替换您文件中的 _createExpressApp 方法
-  _createExpressApp() {
+    _createExpressApp() {
     const app = express();
     app.use(express.json({ limit: '100mb' }));
     app.use(express.raw({ type: '*/*', limit: '100mb' }));
@@ -1200,6 +1198,11 @@ class ProxyServerSystem extends EventEmitter {
     app.use(this._createDebugLogMiddleware());
 
     // --- 仪表盘和API端点 ---
+
+    // 新增: 将根目录重定向到仪表盘
+    app.get('/', (req, res) => {
+        res.redirect('/dashboard');
+    });
 
     // 公开端点：提供仪表盘HTML
     app.get('/dashboard', (req, res) => {
@@ -1390,7 +1393,8 @@ class ProxyServerSystem extends EventEmitter {
     // 主API代理
     app.use(this._createAuthMiddleware());
     app.all(/(.*)/, (req, res) => {
-      if (req.path === '/favicon.ico' || req.path.startsWith('/dashboard')) {
+      // 修改: 增加对根路径的判断，防止其被代理
+      if (req.path === '/' || req.path === '/favicon.ico' || req.path.startsWith('/dashboard')) {
         return res.status(204).send();
       }
       this.requestHandler.processRequest(req, res);

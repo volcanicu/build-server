@@ -369,9 +369,10 @@ class LoggingService {
   }
 
   debug(message) {
-    if (process.env.DEBUG_MODE === 'true') {
-      console.debug(this._formatMessage('DEBUG', message));
-    }
+    // 修正：移除内部对环境变量的检查。
+    // 现在，只要调用此方法，就会打印日志。
+    // 是否调用取决于程序其他部分的 this.config.debugMode 判断。
+    console.debug(this._formatMessage('DEBUG', message));
   }
 }
 
@@ -589,7 +590,12 @@ class RequestHandler {
     return correctedDetails;
   }
 
-  async _handleRequestFailureAndSwitch(errorDetails, res) {
+    async _handleRequestFailureAndSwitch(errorDetails, res) {
+    // 新增：在调试模式下打印完整的原始错误信息
+    if (this.config.debugMode) {
+      this.logger.debug(`[认证][调试] 收到来自浏览器的完整错误详情:\n${JSON.stringify(errorDetails, null, 2)}`);
+    }
+
     const correctedDetails = { ...errorDetails };
     if (correctedDetails.message && typeof correctedDetails.message === 'string') {
       const regex = /(?:HTTP|status code)\s*(\d{3})|"code"\s*:\s*(\d{3})/;
@@ -665,6 +671,15 @@ class RequestHandler {
   }
 
   async processRequest(req, res) {
+    // 关键修复 (V2): 使用 hasOwnProperty 来准确判断 'key' 参数是否存在，
+    // 无论其值是空字符串还是有内容。
+    if ((!this.config.apiKeys || this.config.apiKeys.length === 0) && req.query && req.query.hasOwnProperty('key')) {
+      if (this.config.debugMode) {
+        this.logger.debug(`[请求预处理] 服务器API密钥认证已禁用。检测到并移除了来自客户端的 'key' 查询参数 (值为: '${req.query.key}')。`);
+      }
+      delete req.query.key;
+    }
+
     // 提前获取模型名称和当前账号
     const modelName = this._getModelFromRequest(req);
     const currentAccount = this.currentAuthIndex;
@@ -703,23 +718,32 @@ class RequestHandler {
     }
   }
   _generateRequestId() { return `${Date.now()}_${Math.random().toString(36).substring(2, 11)}`; }
-  _buildProxyRequest(req, requestId) {
-    let requestBodyString;
-    if (typeof req.body === 'object' && req.body !== null) {
-      requestBodyString = JSON.stringify(req.body);
-    } else if (typeof req.body === 'string') {
-      requestBodyString = req.body;
-    } else if (Buffer.isBuffer(req.body)) {
-      requestBodyString = req.body.toString('utf-8');
-    } else {
-      requestBodyString = '';
+    _buildProxyRequest(req, requestId) {
+    const proxyRequest = {
+      path: req.path,
+      method: req.method,
+      headers: req.headers,
+      query_params: req.query,
+      request_id: requestId,
+      streaming_mode: this.serverSystem.streamingMode
+    };
+
+    // 关键修正：只在允许有请求体的HTTP方法中添加body字段
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      let requestBodyString;
+      if (typeof req.body === 'object' && req.body !== null) {
+        requestBodyString = JSON.stringify(req.body);
+      } else if (typeof req.body === 'string') {
+        requestBodyString = req.body;
+      } else if (Buffer.isBuffer(req.body)) {
+        requestBodyString = req.body.toString('utf-8');
+      } else {
+        requestBodyString = '';
+      }
+      proxyRequest.body = requestBodyString;
     }
 
-    return {
-      path: req.path, method: req.method, headers: req.headers, query_params: req.query,
-      body: requestBodyString,
-      request_id: requestId, streaming_mode: this.serverSystem.streamingMode
-    };
+    return proxyRequest;
   }
   _forwardRequest(proxyRequest) {
     const connection = this.connectionRegistry.getFirstConnection();
